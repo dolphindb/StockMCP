@@ -1,0 +1,61 @@
+def search_stock_factor_meta_by_keywords(keywords){
+    keywordList = keywords.split(" ")
+    // 构造动态的 OR 查询条件
+    condition = ""
+    for (k in keywordList) {
+        if (condition == "") {
+            condition = "factor_name like '%" + k + "%' or description like '%" + k + "%'"
+        } else {
+            condition = condition + " or factor_name like '%" + k + "%' or description like '%" + k + "%'"
+        }
+    }
+    // 加载元数据表并筛选
+    condition = 'select factor_name, database_name + table_name as dataSources, description, "" as factor_code from loadTable("dfs://factor_meta", "factor_meta") where strpos(factor_name, "ttm")<0 and (' + condition + ')'
+    t = parseExpr(condition).eval()
+    t.append!(select factor_name, source_table as dataSources, description, factor_code from get_factor_metas_by_rag(keywords) where strpos(factor_name, "ttm")<0)
+
+    result = dict(STRING, ANY)
+    result["query_text"] = keywords
+    result["factormetas"] = t
+    result["数据更新日期"] = exec max(tradetime) as 数据更新日期 from loadTable("dfs://factor", "day_factor") where factorname = `close
+    sessionid = getCurrentSessionAndUser()[0]
+    result["sessionid"] = sessionid
+
+    return toStdJson(result)
+}
+
+description_search_stock_factor_meta_by_keywords = '
+用于从 DolphinDB 股票因子元数据表中混合检索与指定关键词相关的因子信息。该工具支持通过多个关键词（以空格分隔）进行关键词匹配 + 向量检索，快速定位库内的因子定义及其描述信息。
+
+在每次查询指标之前，应该调用该函数。还会返回当前session的id，你必须在后续的所有需要存储共享内存表时，加上该id作为表名。如"wide_data_sessionid"
+
+参数说明：
+- keywords: STRING，多个关键词，用空格分隔，用于模糊匹配因子名称（factor_name）和因子描述（description）列
+
+返回：
+- query_text: 查询文本
+- factormetas: 最相关的因子的元数据
+- sessionid: 会话ID
+- factortables: 因子表信息
+
+示例：
+
+// 按多个关键词 "收盘价 MACD" 检索因子元数据表，获取相关因子信息
+search_stock_factor_meta_by_keywords("收盘价 MACD")
+search_stock_factor_meta_by_keywords("每股公积")
+search_stock_factor_meta_by_keywords("股息率")
+'
+
+if (`search_stock_factor_meta_by_keywords in (exec name from listMCPTools())) {
+  updateMCPTool(`search_stock_factor_meta_by_keywords, search_stock_factor_meta_by_keywords, 
+                [`keywords], 
+                ["STRING"], 
+                description_search_stock_factor_meta_by_keywords)
+} else {
+  addMCPTool(`search_stock_factor_meta_by_keywords, search_stock_factor_meta_by_keywords, 
+                [`keywords], 
+                ["STRING"], 
+                description_search_stock_factor_meta_by_keywords)
+}
+
+publishMCPTools(`search_stock_factor_meta_by_keywords)

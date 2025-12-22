@@ -1,0 +1,68 @@
+def get_quarter_stock_income(stockCodes, dates, resultTableName, sessionId){
+    // 1. 加载数据并筛选
+    t = select * from loadTable("dfs://quarter_factor", "quarter_stock_income") 
+        where ts_code in stockCodes and end_date in dates
+
+    // 2. 会话管理 - 条件性共享内存表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + 
+                   "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+    // 3. 直接返回结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+
+description_get_quarter_stock_income = '根据股票代码和日期获取对应的财务表现数据，包括收入、利润等核心财务指标，并将结果保存为共享内存表，方便后续查询使用。
+
+参数说明：
+- stockCodes: STRING[]，股票代码列表
+- dates: TEMPORAL[]，季度结束日期列表
+- resultTableName: STRING，共享内存表名，用于后续分析。
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+
+// 查询某只股票的单个季度的营收和净利润（完整代码）
+get_quarter_stock_income(["600519.SH"], [2023.03.31], "q1_income", "sess45")
+
+// 查询某只股票的净利润季度同比变化
+get_quarter_stock_income(["000001.SZ"], [2022.03.31, 2022.06.30, 2022.09.30], "netprofit_yoy", "sess789")
+
+// 查询某只股票的每季度收入利润报表
+get_quarter_stock_income(["600519.SH"], [2021.12.31, 2022.03.31, 2022.06.30, 2022.09.30], "revenue_data", "sess101")
+
+// 查询某只股票的每季度收入、利润和收益数据
+get_quarter_stock_income(["000001.SZ"], [2020.12.31, 2021.03.31, 2021.06.30, 2021.09.30], "profit_data", "sess202")
+
+// 查询某只股票的费用支出情况
+get_quarter_stock_income(["600519.SH"], [2019.12.31, 2020.03.31, 2020.06.30, 2020.09.30], "expense_data", "sess303")
+
+'
+
+if (`get_financial_statements_income in (exec name from listMCPTools())) {
+  updateMCPTool(`get_financial_statements_income, get_quarter_stock_income, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "STRING", "STRING"], 
+                description_get_quarter_stock_income)
+} else {
+  addMCPTool(`get_financial_statements_income, get_quarter_stock_income, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "STRING", "STRING"], 
+                description_get_quarter_stock_income)
+}
+
+
+
+publishMCPTools(`get_financial_statements_income)
+
+//withdrawMCPTools([`get_financial_statements_cashflow, `get_fnancial_statements_income])
+//dropMCPTool(`get_quarter_stock_income)
+//dropMCPTool(`get_quarter_stock_cashflow)

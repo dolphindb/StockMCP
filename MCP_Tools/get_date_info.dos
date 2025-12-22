@@ -1,0 +1,55 @@
+description_get_date_info = '
+工具：get_date_info
+
+作用：
+  获取系统当前日期和 day_factor 表中的最新交易日期。
+
+使用场景：
+  - 需要获取当前系统日期或数据库最新可用交易日期
+  - 用于设置查询的结束日期,确保不会查询超出数据范围的日期
+  - 了解数据更新情况
+
+参数说明：
+  无参数
+
+返回值：
+  - system_date: 系统当前日期(DATE格式)
+  - latest_trade_date: day_factor表中最新的交易日期(DATE格式)
+
+示例调用：
+get_date_info()
+'
+
+def get_date_info() {
+  result = dict(STRING, ANY)
+  
+  // 获取系统当前日期
+  systemDate = today()
+  result["system_date"] = systemDate
+
+  // 从day_factor表中查询最新的交易日期
+  latestTradeDate = exec max(tradetime) from loadTable("dfs://factor", "day_factor") where factorname = `close
+  result["latest_trade_date"] = latestTradeDate
+
+  return toStdJson(result)
+}
+
+if (`get_date_info in (exec name from listMCPTools())) {
+  updateMCPTool(
+    `get_date_info,
+    get_date_info,
+    [],
+    [],
+    description_get_date_info
+  )
+} else {
+  addMCPTool(
+    `get_date_info,
+    get_date_info,
+    [],
+    [],
+    description_get_date_info
+  )
+}
+
+publishMCPTools(`get_date_info)

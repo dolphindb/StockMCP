@@ -1,0 +1,71 @@
+description_clean_memory = '
+工具：clean_memory
+
+作用：
+  将当前 session 的共享内存表清除。
+
+使用场景：
+  - 当一次完整的查询或分析任务完成时必须调用。
+
+参数说明：
+  - sessionid: STRING  
+    get_factor_metas 获取的 session 的 id。会清除包含此id的全部内存表。
+
+返回值：
+  - cleared_session_id
+
+示例调用：
+clean_memory(
+  sessionid = "7535115923686979805"
+)
+'
+
+def clean_memory(sessionid) {
+    // 检查输入参数是否为空
+    if (size(sessionid) == 0) {
+        return "错误：sessionid 不能为空"
+    }
+
+    // 清除共享内存表（限当前 session）
+    session_id = "%" + sessionid + "%"
+    tableNames = exec name from objs(true) where shared = true and name like session_id
+
+    // 清除匹配的表
+    clearedCount = 0
+    for (tb in tableNames) {
+        if (strpos(tb, "nav_data_") >=0 or strpos(tb, "perf_metrics_") >=0) {
+          // 因子评价相关的表不清除
+          continue
+        }
+        else {
+          undef(obj=tb, objType=SHARED)
+          clearedCount += 1
+        }
+    }
+
+    result = dict(STRING, ANY)
+    result["cleared_session_id"] = sessionid
+    result["cleared_table_count"] = clearedCount
+    return toStdJson(result)
+}
+
+if (`clean_memory in (exec name from listMCPTools())) {
+  updateMCPTool(
+    `clean_memory,
+    clean_memory,
+    ["sessionid"],
+    ["STRING"],
+    description_clean_memory
+  )
+} else {
+  addMCPTool(
+    `clean_memory,
+    clean_memory,
+    ["sessionid"],
+    ["STRING"],
+    description_clean_memory
+  )
+}
+
+publishMCPTools(`clean_memory)
+// withdrawMCPTools(`clean_memory)

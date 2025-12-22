@@ -1,0 +1,294 @@
+// ==================== MCP工具: 创建回测策略配置 ====================
+
+description_create_backtest_config = '
+用于创建量化回测策略配置,将配置参数插入到 backtest_config 表中。所有配置项均为 JSON 格式字符串。
+
+功能说明：
+- 自动生成唯一的 backtest_id (格式: BT_YYYYMMDD_HHMMSS)
+- 验证所有必需参数
+- 插入配置到数据库
+- 返回创建的配置ID和配置详情
+
+参数说明：
+
+1. backtest_name: STRING
+   策略名称，便于识别和管理
+   示例: "中证1000小市值多因子策略"
+
+2. backtest_settings: STRING (JSON格式)
+   回测基础设定，包含以下字段：
+   - start_date: STRING, 开始日期，必须使用格式： "YYYY-MM-DD"
+   - end_date: STRING, 结束日期，必须使用格式："YYYY-MM-DD"
+   - initial_capital: DOUBLE, 初始资金(元)
+   - benchmark: STRING, 基准指数代码
+   
+   重要：日期格式要求
+    - 如果上游数据提供的日期是其他格式（如"YYYY.MM.DD"），请先转换为"YYYY-MM-DD"
+
+   示例JSON:
+   {"start_date":"2023-01-01","end_date":"2024-12-31","initial_capital":1000000,"benchmark":"000852.SH"}
+
+3. tableName: STRING
+   已经筛选好的股票池表名称,从select_stocks_by_conditions返回的共享表名取。
+
+4. strategy_rules: STRING (JSON格式)
+   选股策略规则，包含以下字段：
+   - factors: STRING[], 因子名称列表，必须不为空，默认为 circ_mv
+   - weights: INT[], 因子权重列表，仅允许值为 1 或 -1
+     - 1 表示正向因子，值越大越好
+     - -1 表示负向因子，值越小越好
+   
+   因子必须经过元数据查询存在，且必须为日频因子。
+   
+   示例JSON:
+   {"factors":["circ_mv","net_profit_growth","debt_to_assets","roe"],"weights":[-1,1,-1,1]}
+   - circ_mv 权重为 -1 表示小市值优先(值越小越好)
+   - roe 权重为 1 表示高 ROE 优先(值越大越好)
+
+5. position_rules: STRING (JSON格式)
+   仓位分配规则，包含以下字段：
+   - max_stocks: INT, 最大持股数量
+   - weight_method: STRING, 权重方法 "equal"(等权) / "score"(按分数加权)
+   
+   示例JSON:
+   {"max_stocks":10,"weight_method":"equal"}
+   
+   解释: 持有10只股票,等权重配置
+
+6. rebalance_rules: STRING (JSON格式)
+   调仓规则，包含以下字段：
+   - weekday: STRING, 调仓星期 "Monday"/"Tuesday"/"Wednesday"/"Thursday"/"Friday"
+   - holding_period: INT, 最小持有天数(交易日)
+   
+   示例JSON:
+   {"weekday":"Tuesday","holding_period":5}
+   解释: 每周二调仓,但距离上次调仓至少间隔5个交易日
+   {"holding_period":21}
+   解释: 月度调仓,距离上次调仓至少间隔21个交易日
+
+7. trade_rules: STRING (JSON格式)
+   交易规则，包含以下字段：
+   - commission_rate: DOUBLE, 统一手续费率(买卖双向,包含佣金+印花税+过户费)
+   
+   示例JSON:
+   {"commission_rate":0.0015}
+   
+   解释: 万1.5手续费(买入时加1.5‰,卖出时扣1.5‰)
+
+返回：
+JSON格式结果，包含：
+- status: "success" 或 "failed"
+- backtest_id: 生成的回测ID
+- backtest_name: 策略名称
+- config_details: 完整配置详情
+- message: 操作结果消息
+
+完整示例：
+
+// 创建中证1000小市值多因子策略
+create_backtest_config(
+    "中证1000小市值多因子策略",
+    "{\"start_date\":\"2023-01-01\",\"end_date\":\"2024-12-31\",\"initial_capital\":1000000,\"benchmark\":\"000852.SH\"}",
+    "selected_stocks_sessionid",
+    "{\"factors\":[\"circ_mv\",\"net_profit_growth\",\"debt_to_assets\",\"roe\"],\"weights\":[-0.3,0.3,-0.2,0.2]}",
+    "{\"max_stocks\":10,\"weight_method\":\"equal\"}",
+    "{\"weekday\":\"Tuesday\",\"holding_period\":5}",
+    "{\"commission_rate\":0.0015}"
+)
+
+// 创建上证50价值策略(简化版)
+create_backtest_config(
+    "上证50价值策略",
+    "{\"start_date\":\"2023-01-01\",\"end_date\":\"2024-12-31\",\"initial_capital\":2000000,\"benchmark\":\"000905.SH\"}",
+    "selected_stocks_sessionid",
+    "{\"factors\":[\"pe_ttm\",\"pb\"],\"weights\":[-0.5,-0.5]}",
+    "{\"max_stocks\":20,\"weight_method\":\"equal\"}",
+    "{\"weekday\":\"Friday\",\"holding_period\":10}",
+    "{\"commission_rate\":0.0015}"
+)
+
+// 单只股票策略
+create_backtest_config(
+    "持仓贵州茅台策略",
+    "{\"start_date\":\"2023-01-01\",\"end_date\":\"2024-12-31\",\"initial_capital\":2000000,\"benchmark\":\"000905.SH\"}",
+    "selected_stocks_sessionid",
+    "{\"factors\":[\"pe_ttm\",\"pb\"],\"weights\":[-0.5,-0.5]}",
+    "{\"max_stocks\":20,\"weight_method\":\"equal\"}",
+    "{\"weekday\":\"Friday\",\"holding_period\":10}",
+    "{\"commission_rate\":0.0015}"
+)
+
+注意事项：
+1. 所有JSON字符串中的双引号需要转义: \"
+2. 因子权重正负号表示方向: 正数=越大越好, 负数=越小越好
+3. filter_expr 中所有字段都是 DOUBLE 类型,布尔值用 0/1 表示
+4. 调仓星期和持有天数要配合使用,避免过度交易
+5. 仓位比例建议不要满仓,留出现金应对波动
+'
+
+
+def create_backtest_config(backtestName, backtestSettings, tableName, 
+                           strategyRules, positionRules, rebalanceRules, tradeRules) {
+/*
+backtestName = "上证50大市值多因子策略"
+backtestSettings = "{\"start_date\":\"2023-01-01\",\"end_date\":\"2025-11-19\",\"initial_capital\":1000000,\"benchmark\":\"000016.SH\"}"
+backtestSettings = "{\"start_date\":\"2023/01/01\",\"end_date\":\"2025.11.19\",\"initial_capital\":1000000,\"benchmark\":\"000016.SH\"}"
+tableName = "selected_stocks_result_1162240389063638373"
+strategyRules = "{\"factors\":[\"circ_mv\"],\"weights\":[1.0]}"
+positionRules = "{\"max_stocks\":5,\"weight_method\":\"equal\"}"
+rebalanceRules = "{\"weekday\":\"Tuesday\",\"holding_period\":5}"
+tradeRules = "{\"commission_rate\":0.0015}"
+
+*/
+
+
+        // 1. 生成唯一的 backtest_id
+        timestamp = format(now(), "yyyyMMdd_HHmmss")
+        backtestId = "BT_" + timestamp
+        
+        // 2. 验证JSON格式
+        try {
+            settingsDict = parseExpr(backtestSettings).eval()
+            // 如果日期有其他格式传入，如'YYYY/MM/DD', 'YYYY.MM.DD', 则转换成“YYYY-MM-DD”
+            if (strpos(settingsDict["start_date"], ".")>-1 or strpos(settingsDict["start_date"], "/")>-1) {
+                settingsDict["start_date"]  =strReplace(settingsDict["start_date"], iif(strpos(settingsDict["start_date"], ".")>-1, ".", "/"), "-")
+            }
+            if (strpos(settingsDict["end_date"], ".")>-1 or strpos(settingsDict["end_date"], "/")>-1) {
+                settingsDict["end_date"] = strReplace(settingsDict["end_date"], iif(strpos(settingsDict["end_date"], ".")>-1, ".", "/"), "-")
+            }
+            //universeDict = parseExpr(universeRules).eval()
+            strategyDict = parseExpr(strategyRules).eval()
+            positionDict = parseExpr(positionRules).eval()
+            rebalanceDict = parseExpr(rebalanceRules).eval()
+            tradeDict = parseExpr(tradeRules).eval()
+        } catch(ex) {
+            throw "JSON格式错误: " + ex
+        }
+        
+
+        // 3. 设置默认值和强校验
+        // backtest_settings 必需字段
+        requiredSettingsKeys = ["start_date", "end_date", "initial_capital", "benchmark"]
+        for (key in requiredSettingsKeys) {
+            if (!(key in settingsDict.keys())) {
+                // 默认值
+                if (key == "benchmark") {
+                    settingsDict["benchmark"] = "000300.SH"
+                } else {
+                    throw "backtest_settings 缺少必需字段: " + key
+                }
+            }
+        }
+
+        // universe_rules 默认值
+        /*
+        if (!("base_index" in universeDict.keys())) {
+            universeDict["base_index"] = "csi1000"
+        }
+        if (!("industry" in universeDict.keys())) {
+            universeDict["industry"] = ""
+        }
+        if (!("filter_expr" in universeDict.keys())) {
+            universeDict["filter_expr"] = "list_days >= 252 and ST = 0 and S = 0 and is_down_limit = 0 and is_up_limit = 0 and (main_board = 1 or chi_next_board = 1)"
+        }
+        if (!("factors" in universeDict.keys()) || size(universeDict["factors"]) == 0) {
+            universeDict["factors"] = ["list_days","ST","S","is_down_limit","is_up_limit","main_board","chi_next_board"]
+        }
+        if (!("stocks" in universeDict.keys())) {
+            universeDict["stocks"] = []
+        }*/
+
+        // strategy_rules 默认值
+        if (!("factors" in strategyDict.keys()) || size(strategyDict["factors"]) == 0) {
+            strategyDict["factors"] = ["circ_mv"]
+            strategyDict["weights"] = [1]
+        }
+        if (!("weights" in strategyDict.keys()) || size(strategyDict["weights"]) != size(strategyDict["factors"])) {
+            strategyDict["weights"] = take(1, size(strategyDict["factors"]))
+        }
+
+        // 校验 weights 值是否为 1 或 -1
+        if (any(strategyDict["weights"] != 1 and strategyDict["weights"] != -1)) {
+            throw "因子权重 (weights) 必须为 1 或 -1"
+        }
+        
+        // position_rules 默认值
+        if (!("max_stocks" in positionDict.keys())) {
+            positionDict["max_stocks"] = 10
+        }
+        if (!("weight_method" in positionDict.keys())) {
+            positionDict["weight_method"] = "equal"
+        }
+        /*
+        if (!("max_single_position" in positionDict.keys())) {
+            positionDict["max_single_position"] = 0.15
+        }
+        if (!("target_position_ratio" in positionDict.keys())) {
+            positionDict["target_position_ratio"] = 0.95
+        }*/
+
+        // rebalance_rules 默认值
+        if (!("weekday" in rebalanceDict.keys())) {
+            rebalanceDict["weekday"] = "Tuesday"
+        }
+        if (!("holding_period" in rebalanceDict.keys())) {
+            rebalanceDict["holding_period"] = 5
+        }
+
+        // trade_rules 默认值
+        if (!("commission_rate" in tradeDict.keys())) {
+            tradeDict["commission_rate"] = 0.0015
+        }
+        
+        // 4. 创建配置记录
+        //configTable = loadTable("dfs://config", "backtest_config")
+        configTable = loadTable("dfs://config", "backtest_config_test")
+        newConfig = table(
+            [backtestId] as backtest_id,
+            [backtestName] as backtest_name,
+            [backtestSettings] as backtest_settings,
+            [tableName] as selected_stocks_table,
+            [strategyRules] as strategy_rules,
+            [positionRules] as position_rules,
+            [rebalanceRules] as rebalance_rules,
+            [tradeRules] as trade_rules,
+            [now()] as create_time
+        )
+        
+        // 5. 插入数据库
+        configTable.append!(newConfig)
+        
+        // 6. 返回结果
+        result = dict(STRING, ANY)
+        result["status"] = "success"
+        result["backtest_id"] = backtestId
+        result["backtest_name"] = backtestName
+        result["config_details"] = dict(
+            [`backtest_settings, `selected_stocks_table, `strategy_rules, 
+             `position_rules, `rebalance_rules, `trade_rules],
+            [settingsDict, tableName, strategyDict, 
+             positionDict, rebalanceDict, tradeDict]
+        )
+        result["message"] = "策略配置创建成功! ID: " + backtestId
+        result["create_time"] = string(now())
+        
+        return toStdJson(result)
+}
+
+// ==================== 注册MCP工具 ====================
+
+if (`create_backtest_config in (exec name from listMCPTools())) {
+    updateMCPTool(`create_backtest_config, create_backtest_config, 
+                  `backtestName`backtestSettings`tableName`strategyRules`positionRules`rebalanceRules`tradeRules, 
+                  ["STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING"], 
+                  description_create_backtest_config)
+} else {
+    addMCPTool(`create_backtest_config, create_backtest_config, 
+               `backtestName`backtestSettings`tableName`strategyRules`positionRules`rebalanceRules`tradeRules, 
+               ["STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING"], 
+               description_create_backtest_config)
+}
+
+publishMCPTools(`create_backtest_config)
+
+print("✅ MCP工具已注册: create_backtest_config")

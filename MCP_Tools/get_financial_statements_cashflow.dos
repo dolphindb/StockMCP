@@ -1,0 +1,60 @@
+def get_quarter_stock_cashflow(stockCodes, dates, resultTableName, sessionId){
+    // 1. 加载数据并筛选
+    t = select * from loadTable("dfs://quarter_factor", "quarter_stock_cashflow") 
+        where ts_code in stockCodes and end_date in dates
+
+    // 2. 会话管理 - 条件性共享内存表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + 
+                   "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+    // 3. 直接返回结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+
+description_get_quarter_stock_cashflow = '根据股票代码和日期获取对应的现金流表现数据，包括经营、投资、融资活动等现金流指标，并将结果保存为共享内存表，方便后续查询使用。
+
+参数说明：
+- stockCodes: STRING[]，股票代码列表
+- dates: TEMPORAL[]，季度结束日期列表
+- resultTableName: STRING，共享内存表名，用于后续分析。
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+// 查询两只股票的两个季度的现金流报表（完整代码）
+get_quarter_stock_cashflow(["600519.SH", "000001.SZ"], [1994.12.31, 1995.06.30], "quarter_cashflow", "session123")
+
+// 查询两只股票的两个季度的现金流报表（混合代码，且不共享内存表）
+get_quarter_stock_cashflow(["600519", "000001.SZ"], [1994.12.31, 1995.06.30], "", "")
+
+// 查询某只股票的单个季度的现金总额（完整代码）
+get_quarter_stock_cashflow(["600519.SH"], [2023.03.31], "q1_cashflow", "sess456")
+
+// 查询某只股票的现金季度同比变化
+get_quarter_stock_cashflow(["000001.SZ"], [2022.03.31, 2022.06.30, 2022.09.30], "netprofit_yoy", "sess789")
+
+// 查询某只股票的每季度经营收入报表
+get_quarter_stock_cashflow(["600519.SH"], [2021.12.31, 2022.03.31, 2022.06.30, 2022.09.30], "revenue_data", "sess101")
+'
+
+if (`get_financial_statements_cashflow in (exec name from listMCPTools())) {
+  updateMCPTool(`get_financial_statements_cashflow, get_quarter_stock_cashflow, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "STRING", "STRING"], 
+                description_get_quarter_stock_cashflow)
+} else {
+  addMCPTool(`get_financial_statements_cashflow, get_quarter_stock_cashflow, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "STRING", "STRING"], 
+                description_get_quarter_stock_cashflow)
+}
+
+publishMCPTools(`get_financial_statements_cashflow)

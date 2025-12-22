@@ -1,0 +1,77 @@
+def get_industry_moneyflow(industryCodes, dates, rowNum, resultTableName, sessionId){
+    // 1. 加载数据并筛选
+    if (industryCodes.size() == 0) {
+        t = select * from loadTable("dfs://day_factor", "moneyflow_ind_ths") 
+            where trade_date in dates
+    } else {
+    t = select * from loadTable("dfs://day_factor", "moneyflow_ind_ths") 
+        where ts_code in industryCodes and trade_date in dates
+    }
+
+    // 2. 会话管理 - 条件性共享内存表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            if (rowNum > 10) {
+                return "查询成功：共享表名 " + resultName + toStdJson(t[0:min(rowNum, t.size())])
+            } else{
+                return "查询成功：共享表名 " + resultName + 
+                   "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+            }
+        }
+    }
+    // 3. 直接返回结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+
+description_get_industry_moneyflow = '根据板块代码和日期获取对应的板块的领涨股票信息，并将结果保存为共享内存表，方便后续查询使用。
+
+参数说明：
+- industryCodes: STRING[]，行业板块代码列表, 如果为空，则返回所有行业板块代码
+- dates: TEMPORAL[]，查询日期
+- rowNum: DOUBLE，是否将所有数据共享到内存表
+- resultTableName: STRING，共享内存表名，用于后续分析。
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+// 查询两个行业板块连续两天的领涨股票（完整代码）
+get_industry_moneyflow(["881101.TI", "881102.TI"], [2024.10.14, 2024.10.15], 10, "ind_moneyflow", "session12")
+
+// 查询两个行业板块连续两天的领涨股票（混合代码，且不共享内存表）
+get_industry_moneyflow(["881101.TI", "881102"], [2024.10.14, 2024.10.15], 0, "", "")
+
+// 查询一个行业板块的公司数量（完整代码）
+get_industry_moneyflow(["881101.TI"], [2025.10.31], 10, "ind_moneyflow_comp_num", "sess456")
+
+// 查询一个行业板块的收盘指数
+get_industry_moneyflow(["881101.TI"], [2022.03.31], 10, "ind_moneyflow_close", "sess789")
+
+// 查询一个行业板块最近一周领涨最多次的股票
+get_industry_moneyflow(["881101.TI"], [2025.10.27, 2025.10.28, 2025.10.29, 2025.10.30, 2025.10.31], 10, "ind_moneyflow_comp", "sess101")
+
+// 查询一个行业板块最近一周的收盘指数同比变化
+get_industry_moneyflow(["881101.TI"], [2025.10.27, 2025.10.28, 2025.10.29, 2025.10.30, 2025.10.31], 10, "ind_moneyflow_close_change", "sess101")
+
+// 查询近一周资金流出或资金流入最大的行业是哪一个
+get_industry_moneyflow([], [2025.10.27, 2025.10.28, 2025.10.29, 2025.10.30, 2025.10.31], 10000, "ind_moneyflow_max", "sess101")
+'
+
+if (`get_industry_moneyflow in (exec name from listMCPTools())) {
+  updateMCPTool(`get_industry_moneyflow, get_industry_moneyflow, 
+                `industryCodes`dates`rowNum`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "DOUBLE", "STRING", "STRING"], 
+                description_get_industry_moneyflow)
+} else {
+  addMCPTool(`get_industry_moneyflow, get_industry_moneyflow, 
+                `industryCodes`dates`rowNum`resultTableName`sessionId, 
+                ["STRING[]", "TEMPORAL[]", "DOUBLE", "STRING", "STRING"], 
+                description_get_industry_moneyflow)
+}
+
+publishMCPTools(`get_industry_moneyflow)

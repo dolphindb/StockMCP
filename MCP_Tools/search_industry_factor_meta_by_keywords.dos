@@ -1,0 +1,78 @@
+def search_industry_factor_meta_by_keywords(keywords){
+    keywordList = keywords.split(" ")
+    
+    // 1. 获取目标表的 Schema 信息 (colDefs 包含 name, typeString, typeInt, comment 等列)
+    // 使用 loadTable 加载表句柄，随后调用 schema().colDefs 获取列定义表
+    t_schema = loadTable("dfs://day_factor", "moneyflow_ind_ths").schema().colDefs
+    
+    // 2. 构造动态的 OR 查询条件
+    // 目标是在 Schema 表的 'name' (列名) 字段中查找匹配项
+    condition = ""
+    for (k in keywordList) {
+        if (condition == "") {
+            condition = "name like '%" + k + "%'"
+        } else {
+            condition = condition + " or name like '%" + k + "%'"
+        }
+    }
+    
+    // 3. 执行筛选
+    // 构造 SQL 并在内存表 t_schema 上执行
+    // 将 name 映射为 factor_name, 固定 dataSources 路径, comment 映射为 description
+    query = 'select name as factor_name, "dfs://day_factor/moneyflow_ind_ths" as dataSources, comment as description, name as factor_code from t_schema where ' + condition
+    
+    if (keywords.trim() == "") {
+        // 如果关键字为空，返回空表结构
+        factormetas = select name as factor_name, "dfs://day_factor/moneyflow_ind_ths" as dataSources, comment as description, name as factor_code from t_schema where 1=0
+    } else {
+        factormetas = runSQL(query,,dict(["t_schema"], [t_schema]))
+    }
+
+    // 4. 构造返回结果
+    result = dict(STRING, ANY)
+    result["query_text"] = keywords
+    result["factormetas"] = factormetas
+    
+    // 获取 Session ID
+    sessionid = getCurrentSessionAndUser()[0]
+    result["sessionid"] = sessionid
+
+    return toStdJson(result)
+}
+
+// --- 定义工具描述 ---
+
+description_search_industry_factor_meta_by_keywords = '
+用于从 DolphinDB 行业资金流向表 (moneyflow_ind_ths) 中检索与指定关键词匹配的字段（因子）。
+该工具直接检索表结构列名，逻辑简单快速。
+
+在查询行业相关指标前调用此函数。
+
+参数说明：
+- keywords: STRING，多个关键词，用空格分隔，用于模糊匹配表的列名。
+
+返回：
+- query_text: 查询文本
+- factormetas: 匹配到的列名及其描述信息
+- sessionid: 会话ID
+
+示例：
+// 检索包含 "流入" 或 "amount" 的行业因子
+search_industry_factor_meta_by_keywords("流入 amount")
+'
+
+// --- 注册或更新工具 ---
+
+if (`search_industry_factor_meta_by_keywords in (exec name from listMCPTools())) {
+  updateMCPTool(`search_industry_factor_meta_by_keywords, search_industry_factor_meta_by_keywords, 
+                [`keywords], 
+                ["STRING"], 
+                description_search_industry_factor_meta_by_keywords)
+} else {
+  addMCPTool(`search_industry_factor_meta_by_keywords, search_industry_factor_meta_by_keywords, 
+                [`keywords], 
+                ["STRING"], 
+                description_search_industry_factor_meta_by_keywords)
+}
+
+publishMCPTools(`search_industry_factor_meta_by_keywords)

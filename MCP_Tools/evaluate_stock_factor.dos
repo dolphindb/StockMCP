@@ -1,0 +1,278 @@
+defg calc_mdd(nav) { return max(1 - nav / cummax(nav)) }
+
+def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries, sessionId) {
+    // factor = "pe"
+    // holdingPeriod = 5
+    // startDate = "2023.01.01"
+    // endDate = "2023.12.31"
+    // industries = []
+    // sessionId = "sess_12345"
+
+    // --- 0. 参数校验 ---
+    if (isNull(factor)) throw "错误：因子名称不能为空"
+    if (holdingPeriod <= 0) throw "错误：持有期必须为正整数"
+    if (isNull(startDate) or isNull(endDate)) throw "错误：起始日期和结束日期不能为空"
+    if (isNull(sessionId)) throw "错误：Session ID不能为空"
+
+    // --- 1. 获取因子数据 ---
+    // 定义时间列兼容性
+    timeColName = "trade_date" 
+    
+    if (factor in exec name from objs(true)) {
+        // 路径A：内存表 (假设结构: securityid, trade_date/tradetime, value)
+        memTable = objByName(factor)
+        cols = colNames(memTable)
+        actualTimeCol = iif("tradetime" in cols, "tradetime", "trade_date")
+        
+        params = dict(STRING, ANY)
+        params["tbl"] = memTable
+        params["dt_start"] = date(startDate)
+        params["dt_end"] = date(endDate)
+        
+        sqlStr = "select " + actualTimeCol + " as trade_date, securityid, value as factor_value from tbl where " + actualTimeCol + " >= dt_start and " + actualTimeCol + " <= dt_end"
+        factorData = runSQL(sqlStr, , params)
+    } else {
+        // 路径B：数据库读取 (dfs://day_factor)
+        factorData = select tradetime as trade_date, securityid, value as factor_value
+                     from loadTable("dfs://factor", "day_factor")
+                     where factorname == factor
+                     and tradetime >= date(startDate) and tradetime <= date(endDate)
+    }
+
+    if (size(factorData) == 0) throw "错误：未查询到因子数据"
+
+    // --- 2. 行业筛选 (如果 industries 为空则跳过筛选) ---
+    if (size(industries) > 0) {
+        industryData = select ts_code as securityid, industry 
+                       from loadTable("dfs://basic_factor", "stock_basic")
+                       where industry in industries
+        
+        factorData = select f.* 
+                     from factorData f 
+                     inner join industryData i on f.securityid = i.securityid
+        
+        if (size(factorData) == 0) throw "错误：行业筛选后数据为空"
+    }
+
+    // --- 3. 准备行情数据 ---
+    // 3.1 加载个股日行情 (用于计算IC和组合收益)
+    stock_daily = select trade_date, ts_code as securityid, close, pct_chg 
+                  from loadTable("dfs://day_factor", "stock_daily_prev")
+                  where trade_date >= date(startDate) and trade_date <= date(endDate)
+    
+    // 3.2 加载基准指数 (沪深300)
+    // 按照要求：从 dfs://day_factor 的 index_daily 表加载 000300.SH
+    try {
+        hs300_daily = select trade_date, pct_chg 
+                      from loadTable("dfs://day_factor", "index_daily")
+                      where ts_code = "000300.SH"
+                      and trade_date >= date(startDate) and trade_date <= date(endDate)
+    } catch(ex) {
+        // 容错：如果指定路径不存在，尝试用全市场均值代替，避免程序崩溃
+        hs300_daily = select mean(pct_chg) as pct_chg from stock_daily group by trade_date
+    }
+    
+    if (size(hs300_daily) == 0) {
+         // 如果没取到数据，用0填充
+         hs300_daily = select distinct trade_date, 0.0 as pct_chg from stock_daily
+    }
+
+    // --- 4. IC 计算 (Information Coefficient) ---
+    // 逻辑：计算 T日因子 与 T+holdingPeriod 日后收益的相关性
+    ic_base = select f.trade_date, f.securityid, f.factor_value, s.close 
+              from factorData f 
+              inner join stock_daily s on f.securityid = s.securityid and f.trade_date = s.trade_date
+    
+    ic_base = select trade_date, securityid, factor_value, 
+                     move(close, -int(holdingPeriod))/close - 1 as forward_return
+              from ic_base context by securityid
+    
+    ic_base = select * from ic_base where isValid(forward_return) and isValid(factor_value)
+    
+    daily_ic_stats = select corr(factor_value, forward_return) as ic from ic_base group by trade_date
+    mean_ic_val = mean(daily_ic_stats.ic)
+    ic_std = std(daily_ic_stats.ic)
+    ic_ir_val = iif(ic_std == 0, 0.0, mean_ic_val / ic_std)
+    // --- 5. 净值曲线计算 (模拟日频调仓) ---
+    // 逻辑：T日根据因子分层，持有至 T+1 日。
+    
+    // 5.1 每日因子分层 (1-5层)
+    nav_base = select trade_date, securityid, factor_value,
+                      asof(quantileSeries(factor_value, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0], interpolation='midpoint'), factor_value) + 1 as layer
+               from factorData context by trade_date
+    
+    // 5.2 关联收益率
+    // 将 stock_daily 关联进来。这里我们计算的是 Group 在 T 日的平均表现。
+    // 但是，T日的涨跌幅是属于 T-1 日持仓的收益。
+    // 简单处理：计算 T日 各组平均涨跌幅，然后整体 shift -1 (即 T+1 的涨跌幅归属于 T日 的决策)
+    merged = select n.trade_date, n.layer, s.pct_chg 
+             from nav_base n
+             inner join stock_daily s on n.securityid = s.securityid and n.trade_date = s.trade_date
+    
+    layer_ret = select mean(pct_chg) as ret from merged group by trade_date, layer
+    
+    // 5.3 宽表转换
+    ret_pivot = select ret/100.0 as ret from layer_ret pivot by trade_date, layer
+    oldNames = string(1..5)
+    newNames = "group_" + string(1..5)
+    rename!(ret_pivot, oldNames, newNames)
+    
+    // 5.4 收益率对齐 (T日因子 -> T+1 收益)
+    // 将收益率列向前移动一天
+    ret_pivot = select trade_date, 
+                       move(group_1, -1) as group_1, move(group_2, -1) as group_2, 
+                       move(group_3, -1) as group_3, move(group_4, -1) as group_4, 
+                       move(group_5, -1) as group_5
+                from ret_pivot
+    ret_pivot = ret_pivot[0:(size(ret_pivot)-1)] // 移除最后一行空值
+
+    // 5.5 准备基准收益 (也需要 shift -1)
+    bench_ret = select trade_date, move(pct_chg, -1)/100.0 as hs300 
+                from hs300_daily order by trade_date
+    
+    // 5.6 准备全样本基准
+    univ_ret = select mean(pct_chg)/100.0 as benchmark_port 
+               from stock_daily group by trade_date
+    univ_ret = select trade_date, move(benchmark_port, -1) as benchmark_port from univ_ret
+
+    // 5.7 合并数据
+    final_df = select * from ret_pivot 
+               inner join bench_ret on ret_pivot.trade_date = bench_ret.trade_date
+               inner join univ_ret on ret_pivot.trade_date = univ_ret.trade_date
+    
+    // 填充空值
+    final_df = select trade_date, 
+                      nullFill(group_1, 0.0) as group_1, nullFill(group_2, 0.0) as group_2,
+                      nullFill(group_3, 0.0) as group_3, nullFill(group_4, 0.0) as group_4,
+                      nullFill(group_5, 0.0) as group_5, 
+                      nullFill(benchmark_port, 0.0) as benchmark_port,
+                      nullFill(hs300, 0.0) as hs300
+               from final_df order by trade_date
+
+    // 5.8 计算累计净值 (Start=1)
+    nav_table = select trade_date,
+                       cumprod(1+group_1) as group_1, cumprod(1+group_2) as group_2,
+                       cumprod(1+group_3) as group_3, cumprod(1+group_4) as group_4,
+                       cumprod(1+group_5) as group_5, 
+                       cumprod(1+benchmark_port) as benchmark_port,
+                       cumprod(1+hs300) as hs300
+                from final_df
+
+    // --- 6. 计算绩效指标表 ---
+    
+    metrics = table(100:0, ["Portfolio", "Ann_Return", "Ann_Volatility", "Sharpe_Ratio", "Max_Drawdown", 
+                            "Ann_Excess_Ret", "Ann_Excess_Vol", "Info_Ratio", "Win_Rate_Rel_Bench", "Excess_Max_Drawdown"], 
+                            [STRING, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE])
+    
+    port_cols = ["group_1", "group_2", "group_3", "group_4", "group_5", "benchmark_port", "hs300"]
+    bm_ret_seq = final_df["hs300"] // 统一使用沪深300作为超额基准
+
+    for (col in port_cols) {
+        ret_seq = final_df[col]
+        nav_seq = nav_table[col]
+        
+        // 绝对指标
+        ann_ret = pow(last(nav_seq), 252.0/size(nav_seq)) - 1
+        ann_vol = std(ret_seq) * sqrt(252)
+        sharpe = iif(ann_vol==0, 0, ann_ret / ann_vol)
+        mdd = calc_mdd(nav_seq)
+        
+        // 相对指标 (vs HS300)
+        ex_ret_seq = ret_seq - bm_ret_seq
+        ex_nav_seq = cumprod(1 + ex_ret_seq)
+        
+        ann_ex_ret = mean(ex_ret_seq) * 252
+        ann_ex_vol = std(ex_ret_seq) * sqrt(252)
+        ir = iif(ann_ex_vol==0, 0, ann_ex_ret / ann_ex_vol)
+        ex_mdd = calc_mdd(ex_nav_seq)
+        
+        // 月度胜率
+        t_m = table(month(final_df.trade_date) as m, ret_seq as r, bm_ret_seq as b)
+        m_agg = select sum(r) as mr, sum(b) as mb from t_m group by m
+        win_rate = exec count(*) from m_agg where mr > mb
+        win_rate = win_rate \ size(m_agg)
+        
+        insert into metrics values(col, ann_ret, ann_vol, sharpe, mdd, ann_ex_ret, ann_ex_vol, ir, win_rate, ex_mdd)
+    }
+
+    // 增加多空组合 (Top - Bottom: Group 5 - Group 1)
+    ls_ret = final_df["group_5"] - final_df["group_1"]
+    ls_nav = cumprod(1 + ls_ret)
+    
+    ann_ls_ret = mean(ls_ret) * 252
+    ann_ls_vol = std(ls_ret) * sqrt(252)
+    sharpe_ls = iif(ann_ls_vol==0, 0, ann_ls_ret / ann_ls_vol)
+    mdd_ls = calc_mdd(ls_nav)
+    
+    insert into metrics values("Long_Short_Top_Bottom", ann_ls_ret, ann_ls_vol, sharpe_ls, mdd_ls, ann_ls_ret, ann_ls_vol, sharpe_ls, 0.0, mdd_ls)
+
+    // --- 7. 注册共享内存表 ---
+    // 格式: nav_data_{sessionId}, perf_metrics_{sessionId}
+    tableNameNAV = "nav_data_" + sessionId
+    tableNamePerf = "perf_metrics_" + sessionId
+    
+    // 清理同名旧表 (如果有)
+    try { undef(tableNameNAV, SHARED) } catch(ex) {}
+    try { undef(tableNamePerf, SHARED) } catch(ex) {}
+    
+    share(nav_table, tableNameNAV)
+    share(metrics, tableNamePerf)
+    REPORT_BASE_URL = "http://183.134.101.137:8067"
+    dashboardUrl = REPORT_BASE_URL + "/?sessionid=" + sessionId
+
+    // --- 8. 返回结果 ---
+    res = dict(STRING, ANY)
+    res["factor_name"] = factor
+    res["mean_ic"] = mean_ic_val
+    res["ic_ir"] = ic_ir_val
+    res["nav_table"] = tableNameNAV
+    res["perf_table"] = tableNamePerf
+    res["summary"] = "因子评估完成。\n平均IC: " + string(round(mean_ic_val, 4)) + 
+                     "\nICIR: " + string(round(ic_ir_val, 3)) +
+                     "\n多空年化收益: " + string(round(ann_ls_ret*100, 2)) + "%" +
+                     "\n多空夏普比率: " + string(round(sharpe_ls, 2)) + 
+                     "\n可视化报告URL: " + dashboardUrl
+    
+    return toStdJson(res)
+}
+
+description_evaluate_stock_factor = '
+用于评估指定因子在不同行业中的表现，生成详细的回测净值曲线和风险绩效指标表。注意，当返回给用户报告的URL时，先不要清理内存表，以免用户访问时报错。
+
+参数说明：
+- factor: STRING，因子名称，例如 "pe"。如果是衍生出的新因子，则直接填写内存表名。
+- holdingPeriod: INT，IC计算的持有期窗口（注：净值曲线默认按日调仓计算）。
+- startDate: STRING，起始日期，格式 "yyyy.MM.dd"。
+- endDate: STRING，结束日期，格式 "yyyy.MM.dd"。
+- industries: STRING[]，行业列表，如 ["银行"]。若为空 []，则进行全市场回测。
+- sessionId: STRING，会话ID，用于生成唯一的共享表名。
+
+返回：
+- JSON 因子评价的摘要，以及两个共享内存表的表名：
+  1. nav_table: 包含日期、5层组合净值、基准组合净值、沪深300净值。
+  2. perf_table: 包含各组合的年化收益、波动率、夏普、最大回撤、超额收益、信息比率、相对胜率等。
+  3. summary: 因子评价的文字摘要，包括平均IC、ICIR、多空组合表现、可视化报告的URL，请一定给用户报告的URL。
+
+    evaluate_stock_factor(
+        "pe",                // 因子名称
+        5,                   // 持有期（5日）
+        "2023.01.01",        // 起始日期
+        "2023.12.31",        // 结束日期
+        ["银行", "非银金融"], // 行业列表（可为空[]表示全市场）
+        "sess_12345"         // sessionId
+    )
+'
+
+if (`evaluate_stock_factor in (exec name from listMCPTools())) {
+  updateMCPTool(`evaluate_stock_factor, evaluate_stock_factor, 
+                `factor`holdingPeriod`startDate`endDate`industries`sessionId, 
+                ["STRING", "DOUBLE", "STRING", "STRING", "STRING[]", "STRING"], 
+                description_evaluate_stock_factor)
+} else {
+  addMCPTool(`evaluate_stock_factor, evaluate_stock_factor, 
+                `factor`holdingPeriod`startDate`endDate`industries`sessionId, 
+                ["STRING", "DOUBLE", "STRING", "STRING", "STRING[]", "STRING"], 
+                description_evaluate_stock_factor)
+}
+
+publishMCPTools(`evaluate_stock_factor)

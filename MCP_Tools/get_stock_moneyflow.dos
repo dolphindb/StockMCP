@@ -1,0 +1,97 @@
+def get_stock_moneyflow(stockCodes, startDate, endDate, is_aggregate, resultTableName, sessionId){
+    // 加载分布式表并筛选
+    res = select * from loadTable("dfs://day_factor", "moneyflow") where ts_code in stockCodes and trade_date between date(startDate) and date(endDate)
+    if(is_aggregate){
+        t = select sum(buy_sm_vol) as buy_sm_vol,
+                     sum(buy_sm_amount) as buy_sm_amount,
+                     sum(sell_sm_vol) as sell_sm_vol,
+                     sum(sell_sm_amount) as sell_sm_amount,
+                     sum(buy_md_vol) as buy_md_vol,
+                     sum(buy_md_amount) as buy_md_amount,
+                     sum(sell_md_vol) as sell_md_vol,
+                     sum(sell_md_amount) as sell_md_amount,
+                     sum(buy_lg_vol) as buy_lg_vol,
+                     sum(buy_lg_amount) as buy_lg_amount,
+                     sum(sell_lg_vol) as sell_lg_vol,
+                     sum(sell_lg_amount) as sell_lg_amount,
+                     sum(buy_elg_vol) as buy_elg_vol,
+                     sum(buy_elg_amount) as buy_elg_amount,
+                     sum(sell_elg_vol) as sell_elg_vol,
+                     sum(sell_elg_amount) as sell_elg_amount,
+                     sum(net_mf_vol) as net_mf_vol,
+                     sum(net_mf_amount) as net_mf_amount
+              from res
+              group by ts_code
+                     
+    }
+    else{
+        t = select * from res
+    }
+    // 如果 sessionId 不为空，则共享结果表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+    // 如果 sessionId 为空，直接返回查询结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+// dates = ["2025.10.20", "2025.11.02"]
+// select * from loadTable("dfs://day_factor", "moneyflow") where ts_code in [`300750.SZ] and trade_date between date(dates[0]) and date(dates[1])
+// get_stock_moneyflow(["300750.SZ"], dates,"stock_moneyflow","session456")
+description_get_stock_moneyflow = '
+用于从 DolphinDB 资金流向表 stock_moneyflow 加载在指定日期区间内的指定股票代码资金流向数据，并将结果保存为共享内存表供后续分析使用。
+
+参数说明：
+- stockCodes: STRING[]，股票代码列表。
+- startDate: STRING，日期区间开始日期，必填，如"2010.07.01" 
+- endDate: STRING，日期区间结束日期，必填，如"2010.07.31"
+- is_aggregate: BOOL, 指定返回结果是否需要依据股票代码聚合
+- resultTableName: STRING，共享内存表名，用于后续分析。建议使用有意义的名称如 "stock_moneyflow"
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+// 查询两只股票的资金流向数据（完整代码）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2008.09.30", "2008.12.31", false, "stock_moneyflow", "session123")
+
+// 查询两只股票的资金流向数据（完整代码，且不共享内存表）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2010.06.30", "2010.09.30", false, "", "")
+
+// 查询两只股票的一天的资金流向数据（完整代码）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2008.09.30", "2008.09.30", false, "stock_moneyflow", "session111")
+
+// 查询两只股票的一周的资金流向数据（完整代码，不聚合）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2025.10.20", "2025.10.26", false, "stock_moneyflow", "session222")
+
+// 查询两只股票的一周的资金流向数据（完整代码，聚合）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2025.10.20", "2025.10.26", true, "stock_moneyflow", "session222")
+
+// 查询两只股票的一个月的资金流向数据（完整代码,聚合）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2025.10.01", "2025.10.31", true, "stock_moneyflow", "session333")
+
+// 查询两只股票的一个季度的资金流向数据（完整代码，聚合）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2025.01.01", "2025.03.31", true, "stock_moneyflow", "session444")
+
+// 查询两只股票的一年的资金流向数据（完整代码，聚合）
+get_stock_moneyflow(["600519.SH", "000001.SZ"], "2010.01.01", "2010.12.31", true, "stock_moneyflow", "session555")
+'
+
+if (`get_stock_moneyflow in (exec name from listMCPTools())) {
+  updateMCPTool(`get_stock_moneyflow, get_stock_moneyflow, 
+                `stockCodes`startDate`endDate`is_aggregate`resultTableName`sessionId, 
+                ["STRING[]","STRING", "STRING", "BOOL", "STRING", "STRING"], 
+                description_get_stock_moneyflow)
+} else {
+  addMCPTool(`get_stock_moneyflow, get_stock_moneyflow, 
+                `stockCodes`startDate`endDate`is_aggregate`resultTableName`sessionId, 
+                ["STRING[]","STRING", "STRING", "BOOL", "STRING", "STRING"], 
+                description_get_stock_moneyflow)
+}
+
+publishMCPTools(`get_stock_moneyflow)

@@ -1,0 +1,68 @@
+def get_stock_code_by_name(StockName, resultTableName, sessionId){
+    // t = select ts_code, symbol, name from loadTable("dfs://basic_factor", "stock_basic") where name in ""
+    // for(sname in StockName){
+    //     res = select ts_code, symbol, name from loadTable("dfs://basic_factor", "stock_basic") where name like sname
+    //     t.append!(res)
+    // }
+    condition = ""
+    for (k in StockName) {
+        if (condition == "") {
+            condition = "name like '%" + k + "%'"
+        } else {
+            condition = condition + " or name like '%" + k + "%'"
+        }
+    }
+    // 加载数据表并筛选
+    condition = 'select ts_code, symbol, name from loadTable("dfs://basic_factor", "stock_basic") where ' + condition
+    t = parseExpr(condition).eval()
+
+    // 如果 sessionId 不为空，则共享结果表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+    // 如果 sessionId 为空，直接返回查询结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+// dates = ["2025.10.20", "2025.11.02"]
+// select * from loadTable("dfs://day_factor", "moneyflow") where ts_code in [`300750.SZ] and trade_date between date(dates[0]) and date(dates[1])
+// get_stock_moneyflow(["300750.SZ"], dates,"stock_moneyflow","session456")
+description_get_stock_code_by_name = '
+用于从 DolphinDB 股票基础信息表 stock_basic 根据指定股票名关键字获取模糊匹配的股票代码 ，并将结果保存为共享内存表供后续分析使用。返回结果包括ts_code， symbol，name三列。
+
+参数说明：
+- StockName: STRING[]，必填，股票名关键字列表。
+- resultTableName: STRING，共享内存表名，用于后续分析。建议使用有意义的名称如 "StockCode_by_Name"
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果的前1-行，包含：
+- ts_code：TS股票代码
+- symbol：股票代码
+- name：股票名称
+
+示例：
+
+// 查询两只股票名对应的股票代码（完整代码）
+get_stock_code_by_name(["平安银行", "神州高铁"], "StockCode_by_Name", "session123")
+
+// 查询两只股票名对应的股票代码（完整代码，且不共享内存表）
+get_stock_code_by_name(["平安银行", "神州高铁"], "", "")
+'
+
+if (`get_stock_code_by_name in (exec name from listMCPTools())) {
+  updateMCPTool(`get_stock_code_by_name, get_stock_code_by_name, 
+                `StockName`resultTableName`sessionId, 
+                ["STRING[]", "STRING", "STRING"], 
+                description_get_stock_code_by_name)
+} else {
+  addMCPTool(`get_stock_code_by_name, get_stock_code_by_name, 
+                `StockName`resultTableName`sessionId, 
+                ["STRING[]", "STRING", "STRING"], 
+                description_get_stock_code_by_name)
+}
+
+publishMCPTools(`get_stock_code_by_name)

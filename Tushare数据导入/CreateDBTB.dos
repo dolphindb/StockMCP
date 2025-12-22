@@ -1,0 +1,3696 @@
+module DolphinDBModules::EasyTushare::createDBTB
+
+/* 
+*  @ brief  
+*  This module is used to create DFS tables for stock data.
+*  @ Author: DolphinDB
+*  @ Last modification time: 2025.05.07
+*  @ DolphinDB server version: 3.00.2.3
+*/
+
+use DolphinDBModules::EasyTushare::utils
+
+def createDB(){
+    drop database if exists "dfs://basic_factor"
+    drop database if exists "dfs://day_factor"
+    drop database if exists "dfs://week_factor"
+    drop database if exists "dfs://month_factor"
+    drop database if exists "dfs://quarter_factor"
+    drop database if exists "dfs://year_factor"
+    database("dfs://basic_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    database("dfs://day_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    database("dfs://week_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    database("dfs://month_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    database("dfs://quarter_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    database("dfs://year_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+}
+/*
+*  @FunctionName: createStockBasic
+*  @Brief: Create a DFS table for stock basic data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockBasic()
+*/
+// q? 为什么其他字段不需要了
+def createStockBasic(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_basic"
+    if(existsDatabase(dbName)){
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(SYMBOL, 0) as symbol,
+            array(SYMBOL, 0) as name,
+            array(SYMBOL, 0) as area,
+            array(SYMBOL, 0) as industry,
+            array(SYMBOL, 0) as market,
+            array(DATE, 0) as list_date,
+            array(STRING, 0) as act_name,
+            array(SYMBOL, 0) as act_ent_type,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createTable(
+            table = schemaTB,
+            tableName = tbName,
+            sortColumns=`ts_code,
+            keepDuplicates=ALL
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["symbol"] = "股票代码"
+        columnComments["name"] = "股票名称"
+        columnComments["area"] = "所在地域"
+        columnComments["industry"] = "所属行业"
+        columnComments["market"] = "市场类型"
+        columnComments["list_date"] = "上市日期"
+        columnComments["act_name"] = "实际控制人名称"
+        columnComments["act_ent_type"] = "实际控制人企业性质"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName, tbName), columnComments)
+        // EasyTushareLog("Table of " + tbName + " created successfully!")
+    }else{
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+}
+
+/*
+*  @FunctionName: createStockPremarket
+*  @Brief: Create a DFS table for stock premarket data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockPremarket()
+*/
+def createStockPremarket(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_premarket"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as float_share,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as up_limit,
+            array(DOUBLE, 0) as down_limit,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["total_share"] = "总股本(万股)"
+        columnComments["float_share"] = "流通股本(万股)"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["up_limit"] = "涨停价"
+        columnComments["down_limit"] = "跌停价"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockName
+*  @Brief: Create a DFS table for stock name data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockName()
+*/
+def createStockName(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_name"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(STRING, 0) as name,
+            array(DATE, 0) as start_date,
+            array(DATE, 0) as end_date,
+            array(DATE, 0) as ann_date,
+            array(STRING, 0) as change_reason,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createTable(
+            table = schemaTB,
+            tableName = tbName,
+            sortColumns=`ts_code,
+            keepDuplicates=ALL
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["name"] = "股票名称"
+        columnComments["start_date"] = "开始日期"
+        columnComments["end_date"] = "结束日期"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["change_reason"] = "变更原因"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockNew
+*  @Brief: Create a DFS table for stock new data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockNew()
+*/
+def createStockNew(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_new"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(STRING, 0) as name,
+            array(DATE, 0) as ipo_date,
+            array(DATE, 0) as issue_date,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as market_amount,
+            array(DOUBLE, 0) as price,
+            array(DOUBLE, 0) as pe,
+            array(DOUBLE, 0) as limit_amount,
+            array(DOUBLE, 0) as funds,
+            array(DOUBLE, 0) as ballot,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createTable(
+            table = schemaTB,
+            tableName = tbName,
+            sortColumns=`ts_code,
+            keepDuplicates=ALL
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["name"] = "股票名称"
+        columnComments["ipo_date"] = "上网发行日期"
+        columnComments["issue_date"] = "上市日期"
+        columnComments["amount"] = "发行总量(万股)"
+        columnComments["market_amount"] = "上网发行总量(万股)"
+        columnComments["price"] = "发行价格"
+        columnComments["pe"] = "市盈率"
+        columnComments["limit_amount"] = "个人申购上限(万股)"
+        columnComments["funds"] = "募集资金(亿元)"
+        columnComments["ballot"] = "中签率"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockInfo
+*  @Brief: Create a DFS table for stock info data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockInfo()
+*/
+def createStockInfo(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_info"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(STRING, 0) as ts_code, 
+            array(DATE, 0) as trade_date, 
+            array(STRING, 0) as name, 
+            array(STRING, 0) as industry, 
+            array(STRING, 0) as area, 
+            array(DOUBLE, 0) as pe, 
+            array(DOUBLE, 0) as float_share, 
+            array(DOUBLE, 0) as total_share, 
+            array(DOUBLE, 0) as total_assets, 
+            array(DOUBLE, 0) as liquid_assets, 
+            array(DOUBLE, 0) as fixed_assets, 
+            array(DOUBLE, 0) as reserved, 
+            array(DOUBLE, 0) as reserved_pershare, 
+            array(DOUBLE, 0) as eps, 
+            array(DOUBLE, 0) as bvps, 
+            array(DOUBLE, 0) as pb, 
+            array(DATE, 0) as list_date, 
+            array(DOUBLE, 0) as undp, 
+            array(DOUBLE, 0) as per_undp, 
+            array(DOUBLE, 0) as rev_yoy, 
+            array(DOUBLE, 0) as profit_yoy, 
+            array(DOUBLE, 0) as gpr, 
+            array(DOUBLE, 0) as npr, 
+            array(INT, 0) as holder_num, 
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["name"] = "股票名称"
+        columnComments["industry"] = "所属行业"
+        columnComments["area"] = "所在地域"
+        columnComments["pe"] = "市盈率"
+        columnComments["float_share"] = "流通股本(万股)"
+        columnComments["total_share"] = "总股本(万股)"
+        columnComments["total_assets"] = "总资产(万元)"
+        columnComments["liquid_assets"] = "流动资产(万元)"
+        columnComments["fixed_assets"] = "固定资产(万元)"
+        columnComments["reserved"] = "公积金"
+        columnComments["reserved_pershare"] = "每股公积金"
+        columnComments["eps"] = "每股收益"
+        columnComments["bvps"] = "每股净资产"
+        columnComments["pb"] = "市净率"
+        columnComments["list_date"] = "上市日期"
+        columnComments["undp"] = "未分配利润"
+        columnComments["per_undp"] = "每股未分配利润"
+        columnComments["rev_yoy"] = "收入同比(%)"
+        columnComments["profit_yoy"] = "利润同比(%)"
+        columnComments["gpr"] = "毛利率(%)"
+        columnComments["npr"] = "净利润率(%)"
+        columnComments["holder_num"] = "股东人数"
+        columnComments["update_time"] = "更新时间"    
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockDaily
+*  @Brief: Create a DFS table for stock daily data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockDaily()
+*  @data:行情数据：A股日线行情
+*/
+def createStockDaily(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_daily"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)    
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockWeekly
+*  @Brief: Create a DFS table for stock weekly data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockWeekly()
+*  @data:行情数据：A股周线行情
+*/
+def createStockWeekly(){
+    dbName = "dfs://week_factor"
+    tbName = "stock_weekly"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockMonthly
+*  @Brief: Create a DFS table for stock monthly data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockMonthly()
+*  @data:行情数据：A股月线行情
+*/
+def createStockMonthly(){
+    dbName = "dfs://month_factor"
+    tbName = "stock_monthly"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockWeekDaily
+*  @Brief: Create a DFS table for stock weekly daily data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockWeekDaily()
+*  @data:行情数据：股票周行情(每日更新)
+*/
+// def createStockWeekDaily(){
+//     dbName = "dfs://week_factor"
+//     tbName = "stock_week_daily"
+//     if(!existsDatabase(dbName)){
+//         EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+//     }
+//     else{
+        
+//         schemaTB = table(
+//             array(SYMBOL, 0) as ts_code,
+//             array(DATE, 0) as trade_date,
+//             array(DOUBLE, 0) as open,
+//             array(DOUBLE, 0) as high,
+//             array(DOUBLE, 0) as low,
+//             array(DOUBLE, 0) as close,
+//             array(DOUBLE, 0) as pre_close,
+//             array(DOUBLE, 0) as change,
+//             array(DOUBLE, 0) as pct_chg,
+//             array(DOUBLE, 0) as vol,
+//             array(DOUBLE, 0) as amount,
+//             array(TIMESTAMP, 0) as update_time
+//         )
+//         db.createPartitionedTable(
+//             table = schemaTB,
+//             tableName = tbName, 
+//             partitionColumns=`trade_date
+//         )
+//         go
+//         columnComments = dict(STRING, STRING)
+//         columnComments["ts_code"] = "TS股票代码"
+//         columnComments["trade_date"] = "交易日期"
+//         columnComments["open"] = "开盘价"
+//         columnComments["high"] = "最高价"
+//         columnComments["low"] = "最低价"
+//         columnComments["close"] = "收盘价"
+//         columnComments["pre_close"] = "昨收盘价"
+//         columnComments["change"] = "涨跌额"
+//         columnComments["pct_chg"] = "涨跌幅(%)"
+//         columnComments["vol"] = "成交量(手)"
+//         columnComments["amount"] = "成交额(千元)"
+//         columnComments["update_time"] = "更新时间"
+//         setColumnComment(loadTable(dbName,tbName), columnComments)
+//         EasyTushareLog("Table of " + tbName + " created successfully!")
+//     }
+// }
+
+/*
+*  @FunctionName: createStockMonthDaily
+*  @Brief: Create a DFS table for stock monthly daily data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockMonthDaily()
+*  @data:行情数据：股票月行情(每日更新)
+*/
+// def createStockMonthDaily(){
+//     dbName = "dfs://month_factor"
+//     tbName = "stock_month_daily"
+//     if(!existsDatabase(dbName)){
+//         EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+//     }
+//     else{
+        
+//         schemaTB = table(
+//             array(SYMBOL, 0) as ts_code,
+//             array(DATE, 0) as trade_date,
+//             array(DOUBLE, 0) as open,
+//             array(DOUBLE, 0) as high,
+//             array(DOUBLE, 0) as low,
+//             array(DOUBLE, 0) as close,
+//             array(DOUBLE, 0) as pre_close,
+//             array(DOUBLE, 0) as change,
+//             array(DOUBLE, 0) as pct_chg,
+//             array(DOUBLE, 0) as vol,
+//             array(DOUBLE, 0) as amount,
+//             array(TIMESTAMP, 0) as update_time
+//         )
+//         db.createPartitionedTable(
+//             table = schemaTB,
+//             tableName = tbName, 
+//             partitionColumns=`trade_date
+//         )
+//         go
+//         columnComments = dict(STRING, STRING)
+//         columnComments["ts_code"] = "TS股票代码"
+//         columnComments["trade_date"] = "交易日期"
+//         columnComments["open"] = "开盘价"
+//         columnComments["high"] = "最高价"
+//         columnComments["low"] = "最低价"
+//         columnComments["close"] = "收盘价"
+//         columnComments["pre_close"] = "昨收盘价"
+//         columnComments["change"] = "涨跌额"
+//         columnComments["pct_chg"] = "涨跌幅(%)"
+//         columnComments["vol"] = "成交量(手)"
+//         columnComments["amount"] = "成交额(千元)"
+//         columnComments["update_time"] = "更新时间"
+//         setColumnComment(loadTable(dbName,tbName), columnComments)
+//         EasyTushareLog("Table of " + tbName + " created successfully!")
+//     }
+// }
+
+/*
+*  @FunctionName: createStockDailyPrev
+*  @Brief: Create a DFS table for stock daily previous data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockDailyPrev()
+*  @data:行情数据：股票周行情(复权--每日更新)
+*/
+def createStockDailyPrev(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_daily_prev"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as turnover_rate,
+            array(DOUBLE, 0) as volume_ratio,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["turnover_rate"] = "换手率(%)"
+        columnComments["volume_ratio"] = "量比"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockDailyBack
+*  @Brief: Create a DFS table for stock daily back data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockDailyBack()
+*/
+def createStockDailyBack(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_daily_back"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as turnover_rate,
+            array(DOUBLE, 0) as volume_ratio,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["turnover_rate"] = "换手率(%)"
+        columnComments["volume_ratio"] = "量比"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockWeeklyPrev
+*  @Brief: Create a DFS table for stock weekly previous data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockWeeklyPrev()
+*/
+def createStockWeeklyPrev(){
+    dbName = "dfs://week_factor"
+    tbName = "stock_weekly_prev"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockWeeklyBack
+*  @Brief: Create a DFS table for stock weekly back data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockWeeklyBack()
+*/
+def createStockWeeklyBack(){
+    dbName = "dfs://week_factor"
+    tbName = "stock_weekly_back"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockMonthlyPrev
+*  @Brief: Create a DFS table for stock monthly previous data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockMonthlyPrev()
+*/
+def createStockMonthlyPrev(){
+    dbName = "dfs://month_factor"
+    tbName = "stock_monthly_prev"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockMonthlyBack
+*  @Brief: Create a DFS table for stock monthly back data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockMonthlyBack()
+*/
+def createStockMonthlyBack(){
+    dbName = "dfs://month_factor"
+    tbName = "stock_monthly_back"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as pct_chg,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as adj_factor,
+            array(DOUBLE, 0) as ma5,
+            array(DOUBLE, 0) as ma_v_5,
+            array(DOUBLE, 0) as ma20,
+            array(DOUBLE, 0) as ma_v_20,
+            array(DOUBLE, 0) as ma50,
+            array(DOUBLE, 0) as ma_v_50,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["close"] = "收盘价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["pct_chg"] = "涨跌幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["ma5"] = "5日均价"
+        columnComments["ma_v_5"] = "5日均量"
+        columnComments["ma20"] = "20日均价"
+        columnComments["ma_v_20"] = "20日均量"
+        columnComments["ma50"] = "50日均价"
+        columnComments["ma_v_50"] = "50日均量"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockAdjFactor
+*  @Brief: Create a DFS table for stock adj factor data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockAdjFactor()
+*/
+def createStockAdjFactor(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_adj_factor"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as adj_factor,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["adj_factor"] = "复权因子"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockDailyBasic
+*  @Brief: Create a DFS table for stock daily basic data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockDailyBasic()
+*/
+def createStockDailyBasic(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_daily_basic"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as turnover_rate,
+            array(DOUBLE, 0) as turnover_rate_f,
+            array(DOUBLE, 0) as volume_ratio,
+            array(DOUBLE, 0) as pe,
+            array(DOUBLE, 0) as pe_ttm,
+            array(DOUBLE, 0) as pb,
+            array(DOUBLE, 0) as ps,
+            array(DOUBLE, 0) as ps_ttm,
+            array(DOUBLE, 0) as dv_ratio,
+            array(DOUBLE, 0) as dv_ttm,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as float_share,
+            array(DOUBLE, 0) as free_share,
+            array(DOUBLE, 0) as total_mv,
+            array(DOUBLE, 0) as circ_mv,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["close"] = "收盘价"
+        columnComments["turnover_rate"] = "换手率(%)"
+        columnComments["turnover_rate_f"] = "换手率(自由流通股)"
+        columnComments["volume_ratio"] = "量比"
+        columnComments["pe"] = "市盈率(总市值/净利润)"
+        columnComments["pe_ttm"] = "市盈率(TTM)"
+        columnComments["pb"] = "市净率(总市值/净资产)"
+        columnComments["ps"] = "市销率"
+        columnComments["ps_ttm"] = "市销率(TTM)"
+        columnComments["dv_ratio"] = "股息率(%)"
+        columnComments["dv_ttm"] = "股息率(TTM)(%)"
+        columnComments["total_share"] = "总股本(万股)"
+        columnComments["float_share"] = "流通股本(万股)"
+        columnComments["free_share"] = "自由流通股本(万股)"
+        columnComments["total_mv"] = "总市值(万元)"
+        columnComments["circ_mv"] = "流通市值(万元)"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockLimit
+*  @Brief: Create a DFS table for stock limit data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockLimit()
+*/
+def createStockLimit(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_limit"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as up_limit,
+            array(DOUBLE, 0) as down_limit,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["up_limit"] = "涨停价"
+        columnComments["down_limit"] = "跌停价"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockSuspend
+*  @Brief: Create a DFS table for stock suspend data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockSuspend()
+*/
+def createStockSuspend(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_suspend"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(STRING, 0) as suspend_timing,
+            array(SYMBOL, 0) as suspend_type,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["suspend_timing"] = "停牌时间"
+        columnComments["suspend_type"] = "停牌类型"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+*  @FunctionName: createStockDailyInfo
+*  @Brief: Create a DFS table for stock daily info data
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: createStockDailyInfo()
+*/
+def createStockDailyInfo(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_daily_info"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(SYMBOL, 0) as name,
+            array(DOUBLE, 0) as pct_change,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as change,
+            array(DOUBLE, 0) as open,
+            array(DOUBLE, 0) as high,
+            array(DOUBLE, 0) as low,
+            array(DOUBLE, 0) as pre_close,
+            array(DOUBLE, 0) as vol_ratio,
+            array(DOUBLE, 0) as turn_over,
+            array(DOUBLE, 0) as swing,
+            array(DOUBLE, 0) as vol,
+            array(DOUBLE, 0) as amount,
+            array(DOUBLE, 0) as selling,
+            array(DOUBLE, 0) as buying,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as float_share,
+            array(DOUBLE, 0) as pe,
+            array(SYMBOL, 0) as industry,
+            array(SYMBOL, 0) as area,
+            array(DOUBLE, 0) as float_mv,
+            array(DOUBLE, 0) as total_mv,
+            array(DOUBLE, 0) as avg_price,
+            array(DOUBLE, 0) as strength,
+            array(DOUBLE, 0) as activity,
+            array(DOUBLE, 0) as avg_turnover,
+            array(DOUBLE, 0) as attack,
+            array(DOUBLE, 0) as interval_3,
+            array(DOUBLE, 0) as interval_6,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["name"] = "股票名称"
+        columnComments["pct_change"] = "涨跌幅(%)"
+        columnComments["close"] = "收盘价"
+        columnComments["change"] = "涨跌额"
+        columnComments["open"] = "开盘价"
+        columnComments["high"] = "最高价"
+        columnComments["low"] = "最低价"
+        columnComments["pre_close"] = "昨收盘价"
+        columnComments["vol_ratio"] = "量比"
+        columnComments["turn_over"] = "换手率(%)"
+        columnComments["swing"] = "振幅(%)"
+        columnComments["vol"] = "成交量(手)"
+        columnComments["amount"] = "成交额(千元)"
+        columnComments["selling"] = "内盘(手)"
+        columnComments["buying"] = "外盘(手)"
+        columnComments["total_share"] = "总股本(万股)"
+        columnComments["float_share"] = "流通股本(万股)"
+        columnComments["pe"] = "市盈率"
+        columnComments["industry"] = "所属行业"
+        columnComments["area"] = "所在地域"
+        columnComments["float_mv"] = "流通市值(万元)"
+        columnComments["total_mv"] = "总市值(万元)"
+        columnComments["avg_price"] = "均价"
+        columnComments["strength"] = "强弱度(%)"
+        columnComments["activity"] = "活跃度"
+        columnComments["avg_turnover"] = "平均每手成交额"
+        columnComments["attack"] = "攻击波(%)"
+        columnComments["interval_3"] = "近3月涨跌幅"
+        columnComments["interval_6"] = "近6月涨跌幅"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+
+def createMoneyflow(){
+    dbName = "dfs://day_factor"
+    tbName = "moneyflow"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as trade_date,
+            array(LONG, 0) as buy_sm_vol,
+            array(DOUBLE, 0) as buy_sm_amount,
+            array(LONG, 0) as sell_sm_vol,
+            array(DOUBLE, 0) as sell_sm_amount,
+            array(LONG, 0) as buy_md_vol,
+            array(DOUBLE, 0) as buy_md_amount,
+            array(LONG, 0) as sell_md_vol,
+            array(DOUBLE, 0) as sell_md_amount,
+            array(LONG, 0) as buy_lg_vol,
+            array(DOUBLE, 0) as buy_lg_amount,
+            array(LONG, 0) as sell_lg_vol,
+            array(DOUBLE, 0) as sell_lg_amount,
+            array(LONG, 0) as buy_elg_vol,
+            array(DOUBLE, 0) as buy_elg_amount,
+            array(LONG, 0) as sell_elg_vol,
+            array(DOUBLE, 0) as sell_elg_amount,
+            array(LONG, 0) as net_mf_vol,
+            array(DOUBLE, 0) as net_mf_amount,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["trade_date"] = "交易日期"
+        columnComments["buy_sm_vol"] = "小单买入量（手）"
+        columnComments["buy_sm_amount"] = "小单买入金额（万元）"
+        columnComments["sell_sm_vol"] = "小单卖出量（手）"
+        columnComments["sell_sm_amount"] = "小单卖出金额（万元）"
+        columnComments["buy_md_vol"] = "中单买入量（手）"
+        columnComments["buy_md_amount"] = "中单买入金额（万元）"
+        columnComments["sell_md_vol"] = "中单卖出量（手）"
+        columnComments["sell_md_amount"] = "中单卖出金额（万元）"
+        columnComments["buy_lg_vol"] = "大单买入量（手）"
+        columnComments["buy_lg_amount"] = "大单买入金额（万元）"
+        columnComments["sell_lg_vol"] = "大单卖出量（手）"
+        columnComments["sell_lg_amount"] = "大单卖出金额（万元）"
+        columnComments["buy_elg_vol"] = "特大单买入量（手）"
+        columnComments["buy_elg_amount"] = "特大单买入金额（万元）"
+        columnComments["sell_elg_vol"] = "特大单卖出量（手）"
+        columnComments["sell_elg_amount"] = "特大单卖出金额（万元）"
+        columnComments["net_mf_vol"] = "净流入量（手）"
+        columnComments["net_mf_amount"] = "净流入额（万元）"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createMoneyflowIndThs(){
+    dbName = "dfs://day_factor"
+    tbName = "moneyflow_ind_ths"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(DATE, 0) as trade_date,
+            array(SYMBOL, 0) as ts_code,
+            array(SYMBOL, 0) as industry,
+            array(SYMBOL, 0) as lead_stock,
+            array(DOUBLE, 0) as close,
+            array(DOUBLE, 0) as pct_change,
+            array(LONG, 0) as company_num,
+            array(DOUBLE, 0) as pct_change_stock,
+            array(DOUBLE, 0) as close_price,
+            array(DOUBLE, 0) as net_buy_amount,
+            array(DOUBLE, 0) as net_sell_amount,
+            array(DOUBLE, 0) as net_amount,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`trade_date,
+            sortColumns=`ts_code`trade_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["trade_date"] = "交易日期"
+        columnComments["ts_code"] = "板块代码"
+        columnComments["industry"] = "板块名称"
+        columnComments["lead_stock"] = "领涨股票名称"
+        columnComments["close"] = "收盘指数"
+        columnComments["pct_change"] = "指数涨跌幅"
+        columnComments["company_num"] = "公司数量"
+        columnComments["pct_change_stock"] = "领涨股涨跌幅"
+        columnComments["close_price"] = "领涨股最新价"
+        columnComments["net_buy_amount"] = "流入资金(亿元)"
+        columnComments["net_sell_amount"] = "流出资金(亿元)"
+        columnComments["net_amount"] = "净额(亿元)"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createQuarterStockIncome(){
+    dbName = "dfs://quarter_factor"
+    tbName = "quarter_stock_income"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as basic_eps,
+            array(DOUBLE, 0) as diluted_eps,
+            array(DOUBLE, 0) as total_revenue,
+            array(DOUBLE, 0) as revenue,
+            array(DOUBLE, 0) as int_income,
+            array(DOUBLE, 0) as prem_earned,
+            array(DOUBLE, 0) as comm_income,
+            array(DOUBLE, 0) as n_commis_income,
+            array(DOUBLE, 0) as n_oth_income,
+            array(DOUBLE, 0) as n_oth_b_income,
+            array(DOUBLE, 0) as prem_income,
+            array(DOUBLE, 0) as out_prem,
+            array(DOUBLE, 0) as une_prem_reser,
+            array(DOUBLE, 0) as reins_income,
+            array(DOUBLE, 0) as n_sec_tb_income,
+            array(DOUBLE, 0) as n_sec_uw_income,
+            array(DOUBLE, 0) as n_asset_mg_income,
+            array(DOUBLE, 0) as oth_b_income,
+            array(DOUBLE, 0) as fv_value_chg_gain,
+            array(DOUBLE, 0) as invest_income,
+            array(DOUBLE, 0) as ass_invest_income,
+            array(DOUBLE, 0) as forex_gain,
+            array(DOUBLE, 0) as total_cogs,
+            array(DOUBLE, 0) as oper_cost,
+            array(DOUBLE, 0) as int_exp,
+            array(DOUBLE, 0) as comm_exp,
+            array(DOUBLE, 0) as biz_tax_surchg,
+            array(DOUBLE, 0) as sell_exp,
+            array(DOUBLE, 0) as admin_exp,
+            array(DOUBLE, 0) as fin_exp,
+            array(DOUBLE, 0) as assets_impair_loss,
+            array(DOUBLE, 0) as prem_refund,
+            array(DOUBLE, 0) as compens_payout,
+            array(DOUBLE, 0) as reser_insur_liab,
+            array(DOUBLE, 0) as div_payt,
+            array(DOUBLE, 0) as reins_exp,
+            array(DOUBLE, 0) as oper_exp,
+            array(DOUBLE, 0) as compens_payout_refu,
+            array(DOUBLE, 0) as insur_reser_refu,
+            array(DOUBLE, 0) as reins_cost_refund,
+            array(DOUBLE, 0) as other_bus_cost,
+            array(DOUBLE, 0) as operate_profit,
+            array(DOUBLE, 0) as non_oper_income,
+            array(DOUBLE, 0) as non_oper_exp,
+            array(DOUBLE, 0) as nca_disploss,
+            array(DOUBLE, 0) as total_profit,
+            array(DOUBLE, 0) as income_tax,
+            array(DOUBLE, 0) as n_income,
+            array(DOUBLE, 0) as n_income_attr_p,
+            array(DOUBLE, 0) as minority_gain,
+            array(DOUBLE, 0) as oth_compr_income,
+            array(DOUBLE, 0) as t_compr_income,
+            array(DOUBLE, 0) as compr_inc_attr_p,
+            array(DOUBLE, 0) as compr_inc_attr_m_s,
+            array(DOUBLE, 0) as ebit,
+            array(DOUBLE, 0) as ebitda,
+            array(DOUBLE, 0) as insurance_exp,
+            array(DOUBLE, 0) as undist_profit,
+            array(DOUBLE, 0) as distable_profit,
+            array(DOUBLE, 0) as rd_exp,
+            array(DOUBLE, 0) as fin_exp_int_exp,
+            array(DOUBLE, 0) as fin_exp_int_inc,
+            array(DOUBLE, 0) as transfer_surplus_rese,
+            array(DOUBLE, 0) as transfer_housing_imprest,
+            array(DOUBLE, 0) as transfer_oth,
+            array(DOUBLE, 0) as adj_lossgain,
+            array(DOUBLE, 0) as withdra_legal_surplus,
+            array(DOUBLE, 0) as withdra_legal_pubfund,
+            array(DOUBLE, 0) as withdra_biz_devfund,
+            array(DOUBLE, 0) as withdra_rese_fund,
+            array(DOUBLE, 0) as withdra_oth_ersu,
+            array(DOUBLE, 0) as workers_welfare,
+            array(DOUBLE, 0) as distr_profit_shrhder,
+            array(DOUBLE, 0) as prfshare_payable_dvd,
+            array(DOUBLE, 0) as comshare_payable_dvd,
+            array(DOUBLE, 0) as capit_comstock_div,
+            array(DOUBLE, 0) as continued_net_profit,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报告类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["basic_eps"] = "基本每股收益"
+        columnComments["diluted_eps"] = "稀释每股收益"
+        columnComments["total_revenue"] = "营业总收入"
+        columnComments["revenue"] = "营业收入"
+        columnComments["int_income"] = "利息收入"
+        columnComments["prem_earned"] = "已赚保费"
+        columnComments["comm_income"] = "手续费及佣金收入"
+        columnComments["n_commis_income"] = "手续费及佣金净收入"
+        columnComments["n_oth_income"] = "其他经营净收益"
+        columnComments["n_oth_b_income"] = "加:其他业务净收益"
+        columnComments["prem_income"] = "保险业务收入"
+        columnComments["out_prem"] = "减:分出保费"
+        columnComments["une_prem_reser"] = "提取未到期责任准备金"
+        columnComments["reins_income"] = "其中:分保费收入"
+        columnComments["n_sec_tb_income"] = "代理买卖证券业务净收入"
+        columnComments["n_sec_uw_income"] = "证券承销业务净收入"
+        columnComments["n_asset_mg_income"] = "受托客户资产管理业务净收入"
+        columnComments["oth_b_income"] = "其他业务收入"
+        columnComments["fv_value_chg_gain"] = "加:公允价值变动净收益"
+        columnComments["invest_income"] = "加:投资净收益"
+        columnComments["ass_invest_income"] = "其中:对联营企业和合营企业的投资收益"
+        columnComments["forex_gain"] = "加:汇兑净收益"
+        columnComments["total_cogs"] = "营业总成本"
+        columnComments["oper_cost"] = "减:营业成本"
+        columnComments["int_exp"] = "减:利息支出"
+        columnComments["comm_exp"] = "减:手续费及佣金支出"
+        columnComments["biz_tax_surchg"] = "减:营业税金及附加"
+        columnComments["sell_exp"] = "减:销售费用"
+        columnComments["admin_exp"] = "减:管理费用"
+        columnComments["fin_exp"] = "减:财务费用"
+        columnComments["assets_impair_loss"] = "减:资产减值损失"
+        columnComments["prem_refund"] = "退保金"
+        columnComments["compens_payout"] = "赔付总支出"
+        columnComments["reser_insur_liab"] = "提取保险责任准备金"
+        columnComments["div_payt"] = "保户红利支出"
+        columnComments["reins_exp"] = "分保费用"
+        columnComments["oper_exp"] = "营业支出"
+        columnComments["compens_payout_refu"] = "减:摊回赔付支出"
+        columnComments["insur_reser_refu"] = "减:摊回保险责任准备金"
+        columnComments["reins_cost_refund"] = "减:摊回分保费用"
+        columnComments["other_bus_cost"] = "其他业务成本"
+        columnComments["operate_profit"] = "营业利润"
+        columnComments["non_oper_income"] = "加:营业外收入"
+        columnComments["non_oper_exp"] = "减:营业外支出"
+        columnComments["nca_disploss"] = "其中:减:非流动资产处置净损失"
+        columnComments["total_profit"] = "利润总额"
+        columnComments["income_tax"] = "所得税费用"
+        columnComments["n_income"] = "净利润(含少数股东损益)"
+        columnComments["n_income_attr_p"] = "净利润(不含少数股东损益)"
+        columnComments["minority_gain"] = "少数股东损益"
+        columnComments["oth_compr_income"] = "其他综合收益"
+        columnComments["t_compr_income"] = "综合收益总额"
+        columnComments["compr_inc_attr_p"] = "归属于母公司(或股东)的综合收益总额"
+        columnComments["compr_inc_attr_m_s"] = "归属于少数股东的综合收益总额"
+        columnComments["ebit"] = "息税前利润"
+        columnComments["ebitda"] = "息税折旧摊销前利润"
+        columnComments["insurance_exp"] = "保险业务支出"
+        columnComments["undist_profit"] = "年初未分配利润"
+        columnComments["distable_profit"] = "可分配利润"
+        columnComments["rd_exp"] = "研发费用"
+        columnComments["fin_exp_int_exp"] = "财务费用:利息费用"
+        columnComments["fin_exp_int_inc"] = "财务费用:利息收入"
+        columnComments["transfer_surplus_rese"] = "盈余公积转入"
+        columnComments["transfer_housing_imprest"] = "住房周转金转入"
+        columnComments["transfer_oth"] = "其他转入"
+        columnComments["adj_lossgain"] = "调整以前年度损益"
+        columnComments["withdra_legal_surplus"] = "提取法定盈余公积"
+        columnComments["withdra_legal_pubfund"] = "提取法定公益金"
+        columnComments["withdra_biz_devfund"] = "提取企业发展基金"
+        columnComments["withdra_rese_fund"] = "提取储备基金"
+        columnComments["withdra_oth_ersu"] = "提取任意盈余公积金"
+        columnComments["workers_welfare"] = "职工奖金福利"
+        columnComments["distr_profit_shrhder"] = "可供股东分配的利润"
+        columnComments["prfshare_payable_dvd"] = "应付优先股股利"
+        columnComments["comshare_payable_dvd"] = "应付普通股股利"
+        columnComments["capit_comstock_div"] = "转作股本的普通股股利"
+        columnComments["continued_net_profit"] = "持续经营净利润"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createYearStockIncome(){
+    dbName = "dfs://year_factor"
+    tbName = "year_stock_income"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as basic_eps,
+            array(DOUBLE, 0) as diluted_eps,
+            array(DOUBLE, 0) as total_revenue,
+            array(DOUBLE, 0) as revenue,
+            array(DOUBLE, 0) as int_income,
+            array(DOUBLE, 0) as prem_earned,
+            array(DOUBLE, 0) as comm_income,
+            array(DOUBLE, 0) as n_commis_income,
+            array(DOUBLE, 0) as n_oth_income,
+            array(DOUBLE, 0) as n_oth_b_income,
+            array(DOUBLE, 0) as prem_income,
+            array(DOUBLE, 0) as out_prem,
+            array(DOUBLE, 0) as une_prem_reser,
+            array(DOUBLE, 0) as reins_income,
+            array(DOUBLE, 0) as n_sec_tb_income,
+            array(DOUBLE, 0) as n_sec_uw_income,
+            array(DOUBLE, 0) as n_asset_mg_income,
+            array(DOUBLE, 0) as oth_b_income,
+            array(DOUBLE, 0) as fv_value_chg_gain,
+            array(DOUBLE, 0) as invest_income,
+            array(DOUBLE, 0) as ass_invest_income,
+            array(DOUBLE, 0) as forex_gain,
+            array(DOUBLE, 0) as total_cogs,
+            array(DOUBLE, 0) as oper_cost,
+            array(DOUBLE, 0) as int_exp,
+            array(DOUBLE, 0) as comm_exp,
+            array(DOUBLE, 0) as biz_tax_surchg,
+            array(DOUBLE, 0) as sell_exp,
+            array(DOUBLE, 0) as admin_exp,
+            array(DOUBLE, 0) as fin_exp,
+            array(DOUBLE, 0) as assets_impair_loss,
+            array(DOUBLE, 0) as prem_refund,
+            array(DOUBLE, 0) as compens_payout,
+            array(DOUBLE, 0) as reser_insur_liab,
+            array(DOUBLE, 0) as div_payt,
+            array(DOUBLE, 0) as reins_exp,
+            array(DOUBLE, 0) as oper_exp,
+            array(DOUBLE, 0) as compens_payout_refu,
+            array(DOUBLE, 0) as insur_reser_refu,
+            array(DOUBLE, 0) as reins_cost_refund,
+            array(DOUBLE, 0) as other_bus_cost,
+            array(DOUBLE, 0) as operate_profit,
+            array(DOUBLE, 0) as non_oper_income,
+            array(DOUBLE, 0) as non_oper_exp,
+            array(DOUBLE, 0) as nca_disploss,
+            array(DOUBLE, 0) as total_profit,
+            array(DOUBLE, 0) as income_tax,
+            array(DOUBLE, 0) as n_income,
+            array(DOUBLE, 0) as n_income_attr_p,
+            array(DOUBLE, 0) as minority_gain,
+            array(DOUBLE, 0) as oth_compr_income,
+            array(DOUBLE, 0) as t_compr_income,
+            array(DOUBLE, 0) as compr_inc_attr_p,
+            array(DOUBLE, 0) as compr_inc_attr_m_s,
+            array(DOUBLE, 0) as ebit,
+            array(DOUBLE, 0) as ebitda,
+            array(DOUBLE, 0) as insurance_exp,
+            array(DOUBLE, 0) as undist_profit,
+            array(DOUBLE, 0) as distable_profit,
+            array(DOUBLE, 0) as rd_exp,
+            array(DOUBLE, 0) as fin_exp_int_exp,
+            array(DOUBLE, 0) as fin_exp_int_inc,
+            array(DOUBLE, 0) as transfer_surplus_rese,
+            array(DOUBLE, 0) as transfer_housing_imprest,
+            array(DOUBLE, 0) as transfer_oth,
+            array(DOUBLE, 0) as adj_lossgain,
+            array(DOUBLE, 0) as withdra_legal_surplus,
+            array(DOUBLE, 0) as withdra_legal_pubfund,
+            array(DOUBLE, 0) as withdra_biz_devfund,
+            array(DOUBLE, 0) as withdra_rese_fund,
+            array(DOUBLE, 0) as withdra_oth_ersu,
+            array(DOUBLE, 0) as workers_welfare,
+            array(DOUBLE, 0) as distr_profit_shrhder,
+            array(DOUBLE, 0) as prfshare_payable_dvd,
+            array(DOUBLE, 0) as comshare_payable_dvd,
+            array(DOUBLE, 0) as capit_comstock_div,
+            array(DOUBLE, 0) as continued_net_profit,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报告类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["basic_eps"] = "基本每股收益"
+        columnComments["diluted_eps"] = "稀释每股收益"
+        columnComments["total_revenue"] = "营业总收入"
+        columnComments["revenue"] = "营业收入"
+        columnComments["int_income"] = "利息收入"
+        columnComments["prem_earned"] = "已赚保费"
+        columnComments["comm_income"] = "手续费及佣金收入"
+        columnComments["n_commis_income"] = "手续费及佣金净收入"
+        columnComments["n_oth_income"] = "其他经营净收益"
+        columnComments["n_oth_b_income"] = "加:其他业务净收益"
+        columnComments["prem_income"] = "保险业务收入"
+        columnComments["out_prem"] = "减:分出保费"
+        columnComments["une_prem_reser"] = "提取未到期责任准备金"
+        columnComments["reins_income"] = "其中:分保费收入"
+        columnComments["n_sec_tb_income"] = "代理买卖证券业务净收入"
+        columnComments["n_sec_uw_income"] = "证券承销业务净收入"
+        columnComments["n_asset_mg_income"] = "受托客户资产管理业务净收入"
+        columnComments["oth_b_income"] = "其他业务收入"
+        columnComments["fv_value_chg_gain"] = "加:公允价值变动净收益"
+        columnComments["invest_income"] = "加:投资净收益"
+        columnComments["ass_invest_income"] = "其中:对联营企业和合营企业的投资收益"
+        columnComments["forex_gain"] = "加:汇兑净收益"
+        columnComments["total_cogs"] = "营业总成本"
+        columnComments["oper_cost"] = "减:营业成本"
+        columnComments["int_exp"] = "减:利息支出"
+        columnComments["comm_exp"] = "减:手续费及佣金支出"
+        columnComments["biz_tax_surchg"] = "减:营业税金及附加"
+        columnComments["sell_exp"] = "减:销售费用"
+        columnComments["admin_exp"] = "减:管理费用"
+        columnComments["fin_exp"] = "减:财务费用"
+        columnComments["assets_impair_loss"] = "减:资产减值损失"
+        columnComments["prem_refund"] = "退保金"
+        columnComments["compens_payout"] = "赔付总支出"
+        columnComments["reser_insur_liab"] = "提取保险责任准备金"
+        columnComments["div_payt"] = "保户红利支出"
+        columnComments["reins_exp"] = "分保费用"
+        columnComments["oper_exp"] = "营业支出"
+        columnComments["compens_payout_refu"] = "减:摊回赔付支出"
+        columnComments["insur_reser_refu"] = "减:摊回保险责任准备金"
+        columnComments["reins_cost_refund"] = "减:摊回分保费用"
+        columnComments["other_bus_cost"] = "其他业务成本"
+        columnComments["operate_profit"] = "营业利润"
+        columnComments["non_oper_income"] = "加:营业外收入"
+        columnComments["non_oper_exp"] = "减:营业外支出"
+        columnComments["nca_disploss"] = "其中:减:非流动资产处置净损失"
+        columnComments["total_profit"] = "利润总额"
+        columnComments["income_tax"] = "所得税费用"
+        columnComments["n_income"] = "净利润(含少数股东损益)"
+        columnComments["n_income_attr_p"] = "净利润(不含少数股东损益)"
+        columnComments["minority_gain"] = "少数股东损益"
+        columnComments["oth_compr_income"] = "其他综合收益"
+        columnComments["t_compr_income"] = "综合收益总额"
+        columnComments["compr_inc_attr_p"] = "归属于母公司(或股东)的综合收益总额"
+        columnComments["compr_inc_attr_m_s"] = "归属于少数股东的综合收益总额"
+        columnComments["ebit"] = "息税前利润"
+        columnComments["ebitda"] = "息税折旧摊销前利润"
+        columnComments["insurance_exp"] = "保险业务支出"
+        columnComments["undist_profit"] = "年初未分配利润"
+        columnComments["distable_profit"] = "可分配利润"
+        columnComments["rd_exp"] = "研发费用"
+        columnComments["fin_exp_int_exp"] = "财务费用:利息费用"
+        columnComments["fin_exp_int_inc"] = "财务费用:利息收入"
+        columnComments["transfer_surplus_rese"] = "盈余公积转入"
+        columnComments["transfer_housing_imprest"] = "住房周转金转入"
+        columnComments["transfer_oth"] = "其他转入"
+        columnComments["adj_lossgain"] = "调整以前年度损益"
+        columnComments["withdra_legal_surplus"] = "提取法定盈余公积"
+        columnComments["withdra_legal_pubfund"] = "提取法定公益金"
+        columnComments["withdra_biz_devfund"] = "提取企业发展基金"
+        columnComments["withdra_rese_fund"] = "提取储备基金"
+        columnComments["withdra_oth_ersu"] = "提取任意盈余公积金"
+        columnComments["workers_welfare"] = "职工奖金福利"
+        columnComments["distr_profit_shrhder"] = "可供股东分配的利润"
+        columnComments["prfshare_payable_dvd"] = "应付优先股股利"
+        columnComments["comshare_payable_dvd"] = "应付普通股股利"
+        columnComments["capit_comstock_div"] = "转作股本的普通股股利"
+        columnComments["continued_net_profit"] = "持续经营净利润"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createQuarterStockBalancesheet(){
+    dbName = "dfs://quarter_factor"
+    tbName = "quarter_stock_balancesheet"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as cap_rese,
+            array(DOUBLE, 0) as undistr_porfit,
+            array(DOUBLE, 0) as surplus_rese,
+            array(DOUBLE, 0) as special_rese,
+            array(DOUBLE, 0) as money_cap,
+            array(DOUBLE, 0) as trad_asset,
+            array(DOUBLE, 0) as notes_receiv,
+            array(DOUBLE, 0) as accounts_receiv,
+            array(DOUBLE, 0) as oth_receiv,
+            array(DOUBLE, 0) as prepayment,
+            array(DOUBLE, 0) as div_receiv,
+            array(DOUBLE, 0) as int_receiv,
+            array(DOUBLE, 0) as inventories,
+            array(DOUBLE, 0) as amor_exp,
+            array(DOUBLE, 0) as nca_within_1y,
+            array(DOUBLE, 0) as sett_rsrv,
+            array(DOUBLE, 0) as loanto_oth_bank_fi,
+            array(DOUBLE, 0) as premium_receiv,
+            array(DOUBLE, 0) as reinsur_receiv,
+            array(DOUBLE, 0) as reinsur_res_receiv,
+            array(DOUBLE, 0) as pur_resale_fa,
+            array(DOUBLE, 0) as oth_cur_assets,
+            array(DOUBLE, 0) as total_cur_assets,
+            array(DOUBLE, 0) as fa_avail_for_sale,
+            array(DOUBLE, 0) as htm_invest,
+            array(DOUBLE, 0) as lt_eqt_invest,
+            array(DOUBLE, 0) as invest_real_estate,
+            array(DOUBLE, 0) as time_deposits,
+            array(DOUBLE, 0) as oth_assets,
+            array(DOUBLE, 0) as lt_rec,
+            array(DOUBLE, 0) as fix_assets,
+            array(DOUBLE, 0) as cip,
+            array(DOUBLE, 0) as const_materials,
+            array(DOUBLE, 0) as fixed_assets_disp,
+            array(DOUBLE, 0) as produc_bio_assets,
+            array(DOUBLE, 0) as oil_and_gas_assets,
+            array(DOUBLE, 0) as intan_assets,
+            array(DOUBLE, 0) as r_and_d,
+            array(DOUBLE, 0) as goodwill,
+            array(DOUBLE, 0) as lt_amor_exp,
+            array(DOUBLE, 0) as defer_tax_assets,
+            array(DOUBLE, 0) as decr_in_disbur,
+            array(DOUBLE, 0) as oth_nca,
+            array(DOUBLE, 0) as total_nca,
+            array(DOUBLE, 0) as cash_reser_cb,
+            array(DOUBLE, 0) as depos_in_oth_bfi,
+            array(DOUBLE, 0) as prec_metals,
+            array(DOUBLE, 0) as deriv_assets,
+            array(DOUBLE, 0) as rr_reins_une_prem,
+            array(DOUBLE, 0) as rr_reins_outstd_cla,
+            array(DOUBLE, 0) as rr_reins_lins_liab,
+            array(DOUBLE, 0) as rr_reins_lthins_liab,
+            array(DOUBLE, 0) as refund_depos,
+            array(DOUBLE, 0) as ph_pledge_loans,
+            array(DOUBLE, 0) as refund_cap_depos,
+            array(DOUBLE, 0) as indep_acct_assets,
+            array(DOUBLE, 0) as client_depos,
+            array(DOUBLE, 0) as client_prov,
+            array(DOUBLE, 0) as transac_seat_fee,
+            array(DOUBLE, 0) as invest_as_receiv,
+            array(DOUBLE, 0) as total_assets,
+            array(DOUBLE, 0) as lt_borr,
+            array(DOUBLE, 0) as st_borr,
+            array(DOUBLE, 0) as cb_borr,
+            array(DOUBLE, 0) as depos_ib_deposits,
+            array(DOUBLE, 0) as loan_oth_bank,
+            array(DOUBLE, 0) as trading_fl,
+            array(DOUBLE, 0) as notes_payable,
+            array(DOUBLE, 0) as acct_payable,
+            array(DOUBLE, 0) as adv_receipts,
+            array(DOUBLE, 0) as sold_for_repur_fa,
+            array(DOUBLE, 0) as comm_payable,
+            array(DOUBLE, 0) as payroll_payable,
+            array(DOUBLE, 0) as taxes_payable,
+            array(DOUBLE, 0) as int_payable,
+            array(DOUBLE, 0) as div_payable,
+            array(DOUBLE, 0) as oth_payable,
+            array(DOUBLE, 0) as acc_exp,
+            array(DOUBLE, 0) as deferred_inc,
+            array(DOUBLE, 0) as st_bonds_payable,
+            array(DOUBLE, 0) as payable_to_reinsurer,
+            array(DOUBLE, 0) as rsrv_insur_cont,
+            array(DOUBLE, 0) as acting_trading_sec,
+            array(DOUBLE, 0) as acting_uw_sec,
+            array(DOUBLE, 0) as non_cur_liab_due_1y,
+            array(DOUBLE, 0) as oth_cur_liab,
+            array(DOUBLE, 0) as total_cur_liab,
+            array(DOUBLE, 0) as bond_payable,
+            array(DOUBLE, 0) as lt_payable,
+            array(DOUBLE, 0) as specific_payables,
+            array(DOUBLE, 0) as estimated_liab,
+            array(DOUBLE, 0) as defer_tax_liab,
+            array(DOUBLE, 0) as defer_inc_non_cur_liab,
+            array(DOUBLE, 0) as oth_ncl,
+            array(DOUBLE, 0) as total_ncl,
+            array(DOUBLE, 0) as depos_oth_bfi,
+            array(DOUBLE, 0) as deriv_liab,
+            array(DOUBLE, 0) as depos,
+            array(DOUBLE, 0) as agency_bus_liab,
+            array(DOUBLE, 0) as oth_liab,
+            array(DOUBLE, 0) as prem_receiv_adva,
+            array(DOUBLE, 0) as depos_received,
+            array(DOUBLE, 0) as ph_invest,
+            array(DOUBLE, 0) as reser_une_prem,
+            array(DOUBLE, 0) as reser_outstd_claims,
+            array(DOUBLE, 0) as reser_lins_liab,
+            array(DOUBLE, 0) as reser_lthins_liab,
+            array(DOUBLE, 0) as indept_acc_liab,
+            array(DOUBLE, 0) as pledge_borr,
+            array(DOUBLE, 0) as indem_payable,
+            array(DOUBLE, 0) as policy_div_payable,
+            array(DOUBLE, 0) as total_liab,
+            array(DOUBLE, 0) as treasury_share,
+            array(DOUBLE, 0) as ordin_risk_reser,
+            array(DOUBLE, 0) as forex_differ,
+            array(DOUBLE, 0) as invest_loss_unconf,
+            array(DOUBLE, 0) as minority_int,
+            array(DOUBLE, 0) as total_hldr_eqy_exc_min_int,
+            array(DOUBLE, 0) as total_hldr_eqy_inc_min_int,
+            array(DOUBLE, 0) as total_liab_hldr_eqy,
+            array(DOUBLE, 0) as lt_payroll_payable,
+            array(DOUBLE, 0) as oth_comp_income,
+            array(DOUBLE, 0) as oth_eqt_tools,
+            array(DOUBLE, 0) as oth_eqt_tools_p_shr,
+            array(DOUBLE, 0) as lending_funds,
+            array(DOUBLE, 0) as acc_receivable,
+            array(DOUBLE, 0) as st_fin_payable,
+            array(DOUBLE, 0) as payables,
+            array(DOUBLE, 0) as hfs_assets,
+            array(DOUBLE, 0) as hfs_sales,
+            array(DOUBLE, 0) as cost_fin_assets,
+            array(DOUBLE, 0) as fair_value_fin_assets,
+            array(DOUBLE, 0) as contract_assets,
+            array(DOUBLE, 0) as contract_liab,
+            array(DOUBLE, 0) as accounts_receiv_bill,
+            array(DOUBLE, 0) as accounts_pay,
+            array(DOUBLE, 0) as oth_rcv_total,
+            array(DOUBLE, 0) as fix_assets_total,
+            array(DOUBLE, 0) as cip_total,
+            array(DOUBLE, 0) as oth_pay_total,
+            array(DOUBLE, 0) as long_pay_total,
+            array(DOUBLE, 0) as debt_invest,
+            array(DOUBLE, 0) as oth_debt_invest,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报表类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["total_share"] = "期末总股本"
+        columnComments["cap_rese"] = "资本公积金"
+        columnComments["undistr_porfit"] = "未分配利润"
+        columnComments["surplus_rese"] = "盈余公积金"
+        columnComments["special_rese"] = "专项储备"
+        columnComments["money_cap"] = "货币资金"
+        columnComments["trad_asset"] = "交易性金融资产"
+        columnComments["notes_receiv"] = "应收票据"
+        columnComments["accounts_receiv"] = "应收账款"
+        columnComments["oth_receiv"] = "其他应收款"
+        columnComments["prepayment"] = "预付款项"
+        columnComments["div_receiv"] = "应收股利"
+        columnComments["int_receiv"] = "应收利息"
+        columnComments["inventories"] = "存货"
+        columnComments["amor_exp"] = "待摊费用"
+        columnComments["nca_within_1y"] = "一年内到期的非流动资产"
+        columnComments["sett_rsrv"] = "结算备付金"
+        columnComments["loanto_oth_bank_fi"] = "拆出资金"
+        columnComments["premium_receiv"] = "应收保费"
+        columnComments["reinsur_receiv"] = "应收分保账款"
+        columnComments["reinsur_res_receiv"] = "应收分保合同准备金"
+        columnComments["pur_resale_fa"] = "买入返售金融资产"
+        columnComments["oth_cur_assets"] = "其他流动资产"
+        columnComments["total_cur_assets"] = "流动资产合计"
+        columnComments["fa_avail_for_sale"] = "可供出售金融资产"
+        columnComments["htm_invest"] = "持有至到期投资"
+        columnComments["lt_eqt_invest"] = "长期股权投资"
+        columnComments["invest_real_estate"] = "投资性房地产"
+        columnComments["time_deposits"] = "定期存款"
+        columnComments["oth_assets"] = "其他资产"
+        columnComments["lt_rec"] = "长期应收款"
+        columnComments["fix_assets"] = "固定资产"
+        columnComments["cip"] = "在建工程"
+        columnComments["const_materials"] = "工程物资"
+        columnComments["fixed_assets_disp"] = "固定资产清理"
+        columnComments["produc_bio_assets"] = "生产性生物资产"
+        columnComments["oil_and_gas_assets"] = "油气资产"
+        columnComments["intan_assets"] = "无形资产"
+        columnComments["r_and_d"] = "研发支出"
+        columnComments["goodwill"] = "商誉"
+        columnComments["lt_amor_exp"] = "长期待摊费用"
+        columnComments["defer_tax_assets"] = "递延所得税资产"
+        columnComments["decr_in_disbur"] = "发放贷款及垫款"
+        columnComments["oth_nca"] = "其他非流动资产"
+        columnComments["total_nca"] = "非流动资产合计"
+        columnComments["cash_reser_cb"] = "现金及存放中央银行款项"
+        columnComments["depos_in_oth_bfi"] = "存放同业和其它金融机构款项"
+        columnComments["prec_metals"] = "贵金属"
+        columnComments["deriv_assets"] = "衍生金融资产"
+        columnComments["rr_reins_une_prem"] = "应收分保未到期责任准备金"
+        columnComments["rr_reins_outstd_cla"] = "应收分保未决赔款准备金"
+        columnComments["rr_reins_lins_liab"] = "应收分保寿险责任准备金"
+        columnComments["rr_reins_lthins_liab"] = "应收分保长期健康险责任准备金"
+        columnComments["refund_depos"] = "存出保证金"
+        columnComments["ph_pledge_loans"] = "保户质押贷款"
+        columnComments["refund_cap_depos"] = "存出资本保证金"
+        columnComments["indep_acct_assets"] = "独立账户资产"
+        columnComments["client_depos"] = "其中：客户资金存款"
+        columnComments["client_prov"] = "其中：客户备付金"
+        columnComments["transac_seat_fee"] = "其中:交易席位费"
+        columnComments["invest_as_receiv"] = "应收款项类投资"
+        columnComments["total_assets"] = "资产总计"
+        columnComments["lt_borr"] = "长期借款"
+        columnComments["st_borr"] = "短期借款"
+        columnComments["cb_borr"] = "向中央银行借款"
+        columnComments["depos_ib_deposits"] = "吸收存款及同业存放"
+        columnComments["loan_oth_bank"] = "拆入资金"
+        columnComments["trading_fl"] = "交易性金融负债"
+        columnComments["notes_payable"] = "应付票据"
+        columnComments["acct_payable"] = "应付账款"
+        columnComments["adv_receipts"] = "预收款项"
+        columnComments["sold_for_repur_fa"] = "卖出回购金融资产款"
+        columnComments["comm_payable"] = "应付手续费及佣金"
+        columnComments["payroll_payable"] = "应付职工薪酬"
+        columnComments["taxes_payable"] = "应交税费"
+        columnComments["int_payable"] = "应付利息"
+        columnComments["div_payable"] = "应付股利"
+        columnComments["oth_payable"] = "其他应付款"
+        columnComments["acc_exp"] = "预提费用"
+        columnComments["deferred_inc"] = "递延收益"
+        columnComments["st_bonds_payable"] = "应付短期债券"
+        columnComments["payable_to_reinsurer"] = "应付分保账款"
+        columnComments["rsrv_insur_cont"] = "保险合同准备金"
+        columnComments["acting_trading_sec"] = "代理买卖证券款"
+        columnComments["acting_uw_sec"] = "代理承销证券款"
+        columnComments["non_cur_liab_due_1y"] = "一年内到期的非流动负债"
+        columnComments["oth_cur_liab"] = "其他流动负债"
+        columnComments["total_cur_liab"] = "流动负债合计"
+        columnComments["bond_payable"] = "应付债券"
+        columnComments["lt_payable"] = "长期应付款"
+        columnComments["specific_payables"] = "专项应付款"
+        columnComments["estimated_liab"] = "预计负债"
+        columnComments["defer_tax_liab"] = "递延所得税负债"
+        columnComments["defer_inc_non_cur_liab"] = "递延收益-非流动负债"
+        columnComments["oth_ncl"] = "其他非流动负债"
+        columnComments["total_ncl"] = "非流动负债合计"
+        columnComments["depos_oth_bfi"] = "同业和其它金融机构存放款项"
+        columnComments["deriv_liab"] = "衍生金融负债"
+        columnComments["depos"] = "吸收存款"
+        columnComments["agency_bus_liab"] = "代理业务负债"
+        columnComments["oth_liab"] = "其他负债"
+        columnComments["prem_receiv_adva"] = "预收保费"
+        columnComments["depos_received"] = "存入保证金"
+        columnComments["ph_invest"] = "保户储金及投资款"
+        columnComments["reser_une_prem"] = "未到期责任准备金"
+        columnComments["reser_outstd_claims"] = "未决赔款准备金"
+        columnComments["reser_lins_liab"] = "寿险责任准备金"
+        columnComments["reser_lthins_liab"] = "长期健康险责任准备金"
+        columnComments["indept_acc_liab"] = "独立账户负债"
+        columnComments["pledge_borr"] = "其中:质押借款"
+        columnComments["indem_payable"] = "应付赔付款"
+        columnComments["policy_div_payable"] = "应付保单红利"
+        columnComments["total_liab"] = "负债合计"
+        columnComments["treasury_share"] = "减:库存股"
+        columnComments["ordin_risk_reser"] = "一般风险准备"
+        columnComments["forex_differ"] = "外币报表折算差额"
+        columnComments["invest_loss_unconf"] = "未确认的投资损失"
+        columnComments["minority_int"] = "少数股东权益"
+        columnComments["total_hldr_eqy_exc_min_int"] = "股东权益合计(不含少数股东权益)"
+        columnComments["total_hldr_eqy_inc_min_int"] = "股东权益合计(含少数股东权益)"
+        columnComments["total_liab_hldr_eqy"] = "负债及股东权益总计"
+        columnComments["lt_payroll_payable"] = "长期应付职工薪酬"
+        columnComments["oth_comp_income"] = "其他综合收益"
+        columnComments["oth_eqt_tools"] = "其他权益工具"
+        columnComments["oth_eqt_tools_p_shr"] = "其他权益工具(优先股)"
+        columnComments["lending_funds"] = "融出资金"
+        columnComments["acc_receivable"] = "应收款项"
+        columnComments["st_fin_payable"] = "应付短期融资款"
+        columnComments["payables"] = "应付款项"
+        columnComments["hfs_assets"] = "持有待售的资产"
+        columnComments["hfs_sales"] = "持有待售的负债"
+        columnComments["cost_fin_assets"] = "以摊余成本计量的金融资产"
+        columnComments["fair_value_fin_assets"] = "以公允价值计量且其变动计入其他综合收益的金融资产"
+        columnComments["contract_assets"] = "合同资产"
+        columnComments["contract_liab"] = "合同负债"
+        columnComments["accounts_receiv_bill"] = "应收票据及应收账款"
+        columnComments["accounts_pay"] = "应付票据及应付账款"
+        columnComments["oth_rcv_total"] = "其他应收款(合计)（元）"
+        columnComments["fix_assets_total"] = "固定资产(合计)(元)"
+        columnComments["cip_total"] = "在建工程(合计)(元)"
+        columnComments["oth_pay_total"] = "其他应付款(合计)(元)"
+        columnComments["long_pay_total"] = "长期应付款(合计)(元)"
+        columnComments["debt_invest"] = "债权投资(元)"
+        columnComments["oth_debt_invest"] = "其他债权投资(元)"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createYearStockBalancesheet(){
+    dbName = "dfs://year_factor"
+    tbName = "year_stock_balancesheet"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as cap_rese,
+            array(DOUBLE, 0) as undistr_porfit,
+            array(DOUBLE, 0) as surplus_rese,
+            array(DOUBLE, 0) as special_rese,
+            array(DOUBLE, 0) as money_cap,
+            array(DOUBLE, 0) as trad_asset,
+            array(DOUBLE, 0) as notes_receiv,
+            array(DOUBLE, 0) as accounts_receiv,
+            array(DOUBLE, 0) as oth_receiv,
+            array(DOUBLE, 0) as prepayment,
+            array(DOUBLE, 0) as div_receiv,
+            array(DOUBLE, 0) as int_receiv,
+            array(DOUBLE, 0) as inventories,
+            array(DOUBLE, 0) as amor_exp,
+            array(DOUBLE, 0) as nca_within_1y,
+            array(DOUBLE, 0) as sett_rsrv,
+            array(DOUBLE, 0) as loanto_oth_bank_fi,
+            array(DOUBLE, 0) as premium_receiv,
+            array(DOUBLE, 0) as reinsur_receiv,
+            array(DOUBLE, 0) as reinsur_res_receiv,
+            array(DOUBLE, 0) as pur_resale_fa,
+            array(DOUBLE, 0) as oth_cur_assets,
+            array(DOUBLE, 0) as total_cur_assets,
+            array(DOUBLE, 0) as fa_avail_for_sale,
+            array(DOUBLE, 0) as htm_invest,
+            array(DOUBLE, 0) as lt_eqt_invest,
+            array(DOUBLE, 0) as invest_real_estate,
+            array(DOUBLE, 0) as time_deposits,
+            array(DOUBLE, 0) as oth_assets,
+            array(DOUBLE, 0) as lt_rec,
+            array(DOUBLE, 0) as fix_assets,
+            array(DOUBLE, 0) as cip,
+            array(DOUBLE, 0) as const_materials,
+            array(DOUBLE, 0) as fixed_assets_disp,
+            array(DOUBLE, 0) as produc_bio_assets,
+            array(DOUBLE, 0) as oil_and_gas_assets,
+            array(DOUBLE, 0) as intan_assets,
+            array(DOUBLE, 0) as r_and_d,
+            array(DOUBLE, 0) as goodwill,
+            array(DOUBLE, 0) as lt_amor_exp,
+            array(DOUBLE, 0) as defer_tax_assets,
+            array(DOUBLE, 0) as decr_in_disbur,
+            array(DOUBLE, 0) as oth_nca,
+            array(DOUBLE, 0) as total_nca,
+            array(DOUBLE, 0) as cash_reser_cb,
+            array(DOUBLE, 0) as depos_in_oth_bfi,
+            array(DOUBLE, 0) as prec_metals,
+            array(DOUBLE, 0) as deriv_assets,
+            array(DOUBLE, 0) as rr_reins_une_prem,
+            array(DOUBLE, 0) as rr_reins_outstd_cla,
+            array(DOUBLE, 0) as rr_reins_lins_liab,
+            array(DOUBLE, 0) as rr_reins_lthins_liab,
+            array(DOUBLE, 0) as refund_depos,
+            array(DOUBLE, 0) as ph_pledge_loans,
+            array(DOUBLE, 0) as refund_cap_depos,
+            array(DOUBLE, 0) as indep_acct_assets,
+            array(DOUBLE, 0) as client_depos,
+            array(DOUBLE, 0) as client_prov,
+            array(DOUBLE, 0) as transac_seat_fee,
+            array(DOUBLE, 0) as invest_as_receiv,
+            array(DOUBLE, 0) as total_assets,
+            array(DOUBLE, 0) as lt_borr,
+            array(DOUBLE, 0) as st_borr,
+            array(DOUBLE, 0) as cb_borr,
+            array(DOUBLE, 0) as depos_ib_deposits,
+            array(DOUBLE, 0) as loan_oth_bank,
+            array(DOUBLE, 0) as trading_fl,
+            array(DOUBLE, 0) as notes_payable,
+            array(DOUBLE, 0) as acct_payable,
+            array(DOUBLE, 0) as adv_receipts,
+            array(DOUBLE, 0) as sold_for_repur_fa,
+            array(DOUBLE, 0) as comm_payable,
+            array(DOUBLE, 0) as payroll_payable,
+            array(DOUBLE, 0) as taxes_payable,
+            array(DOUBLE, 0) as int_payable,
+            array(DOUBLE, 0) as div_payable,
+            array(DOUBLE, 0) as oth_payable,
+            array(DOUBLE, 0) as acc_exp,
+            array(DOUBLE, 0) as deferred_inc,
+            array(DOUBLE, 0) as st_bonds_payable,
+            array(DOUBLE, 0) as payable_to_reinsurer,
+            array(DOUBLE, 0) as rsrv_insur_cont,
+            array(DOUBLE, 0) as acting_trading_sec,
+            array(DOUBLE, 0) as acting_uw_sec,
+            array(DOUBLE, 0) as non_cur_liab_due_1y,
+            array(DOUBLE, 0) as oth_cur_liab,
+            array(DOUBLE, 0) as total_cur_liab,
+            array(DOUBLE, 0) as bond_payable,
+            array(DOUBLE, 0) as lt_payable,
+            array(DOUBLE, 0) as specific_payables,
+            array(DOUBLE, 0) as estimated_liab,
+            array(DOUBLE, 0) as defer_tax_liab,
+            array(DOUBLE, 0) as defer_inc_non_cur_liab,
+            array(DOUBLE, 0) as oth_ncl,
+            array(DOUBLE, 0) as total_ncl,
+            array(DOUBLE, 0) as depos_oth_bfi,
+            array(DOUBLE, 0) as deriv_liab,
+            array(DOUBLE, 0) as depos,
+            array(DOUBLE, 0) as agency_bus_liab,
+            array(DOUBLE, 0) as oth_liab,
+            array(DOUBLE, 0) as prem_receiv_adva,
+            array(DOUBLE, 0) as depos_received,
+            array(DOUBLE, 0) as ph_invest,
+            array(DOUBLE, 0) as reser_une_prem,
+            array(DOUBLE, 0) as reser_outstd_claims,
+            array(DOUBLE, 0) as reser_lins_liab,
+            array(DOUBLE, 0) as reser_lthins_liab,
+            array(DOUBLE, 0) as indept_acc_liab,
+            array(DOUBLE, 0) as pledge_borr,
+            array(DOUBLE, 0) as indem_payable,
+            array(DOUBLE, 0) as policy_div_payable,
+            array(DOUBLE, 0) as total_liab,
+            array(DOUBLE, 0) as treasury_share,
+            array(DOUBLE, 0) as ordin_risk_reser,
+            array(DOUBLE, 0) as forex_differ,
+            array(DOUBLE, 0) as invest_loss_unconf,
+            array(DOUBLE, 0) as minority_int,
+            array(DOUBLE, 0) as total_hldr_eqy_exc_min_int,
+            array(DOUBLE, 0) as total_hldr_eqy_inc_min_int,
+            array(DOUBLE, 0) as total_liab_hldr_eqy,
+            array(DOUBLE, 0) as lt_payroll_payable,
+            array(DOUBLE, 0) as oth_comp_income,
+            array(DOUBLE, 0) as oth_eqt_tools,
+            array(DOUBLE, 0) as oth_eqt_tools_p_shr,
+            array(DOUBLE, 0) as lending_funds,
+            array(DOUBLE, 0) as acc_receivable,
+            array(DOUBLE, 0) as st_fin_payable,
+            array(DOUBLE, 0) as payables,
+            array(DOUBLE, 0) as hfs_assets,
+            array(DOUBLE, 0) as hfs_sales,
+            array(DOUBLE, 0) as cost_fin_assets,
+            array(DOUBLE, 0) as fair_value_fin_assets,
+            array(DOUBLE, 0) as contract_assets,
+            array(DOUBLE, 0) as contract_liab,
+            array(DOUBLE, 0) as accounts_receiv_bill,
+            array(DOUBLE, 0) as accounts_pay,
+            array(DOUBLE, 0) as oth_rcv_total,
+            array(DOUBLE, 0) as fix_assets_total,
+            array(DOUBLE, 0) as cip_total,
+            array(DOUBLE, 0) as oth_pay_total,
+            array(DOUBLE, 0) as long_pay_total,
+            array(DOUBLE, 0) as debt_invest,
+            array(DOUBLE, 0) as oth_debt_invest,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报表类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["total_share"] = "期末总股本"
+        columnComments["cap_rese"] = "资本公积金"
+        columnComments["undistr_porfit"] = "未分配利润"
+        columnComments["surplus_rese"] = "盈余公积金"
+        columnComments["special_rese"] = "专项储备"
+        columnComments["money_cap"] = "货币资金"
+        columnComments["trad_asset"] = "交易性金融资产"
+        columnComments["notes_receiv"] = "应收票据"
+        columnComments["accounts_receiv"] = "应收账款"
+        columnComments["oth_receiv"] = "其他应收款"
+        columnComments["prepayment"] = "预付款项"
+        columnComments["div_receiv"] = "应收股利"
+        columnComments["int_receiv"] = "应收利息"
+        columnComments["inventories"] = "存货"
+        columnComments["amor_exp"] = "待摊费用"
+        columnComments["nca_within_1y"] = "一年内到期的非流动资产"
+        columnComments["sett_rsrv"] = "结算备付金"
+        columnComments["loanto_oth_bank_fi"] = "拆出资金"
+        columnComments["premium_receiv"] = "应收保费"
+        columnComments["reinsur_receiv"] = "应收分保账款"
+        columnComments["reinsur_res_receiv"] = "应收分保合同准备金"
+        columnComments["pur_resale_fa"] = "买入返售金融资产"
+        columnComments["oth_cur_assets"] = "其他流动资产"
+        columnComments["total_cur_assets"] = "流动资产合计"
+        columnComments["fa_avail_for_sale"] = "可供出售金融资产"
+        columnComments["htm_invest"] = "持有至到期投资"
+        columnComments["lt_eqt_invest"] = "长期股权投资"
+        columnComments["invest_real_estate"] = "投资性房地产"
+        columnComments["time_deposits"] = "定期存款"
+        columnComments["oth_assets"] = "其他资产"
+        columnComments["lt_rec"] = "长期应收款"
+        columnComments["fix_assets"] = "固定资产"
+        columnComments["cip"] = "在建工程"
+        columnComments["const_materials"] = "工程物资"
+        columnComments["fixed_assets_disp"] = "固定资产清理"
+        columnComments["produc_bio_assets"] = "生产性生物资产"
+        columnComments["oil_and_gas_assets"] = "油气资产"
+        columnComments["intan_assets"] = "无形资产"
+        columnComments["r_and_d"] = "研发支出"
+        columnComments["goodwill"] = "商誉"
+        columnComments["lt_amor_exp"] = "长期待摊费用"
+        columnComments["defer_tax_assets"] = "递延所得税资产"
+        columnComments["decr_in_disbur"] = "发放贷款及垫款"
+        columnComments["oth_nca"] = "其他非流动资产"
+        columnComments["total_nca"] = "非流动资产合计"
+        columnComments["cash_reser_cb"] = "现金及存放中央银行款项"
+        columnComments["depos_in_oth_bfi"] = "存放同业和其它金融机构款项"
+        columnComments["prec_metals"] = "贵金属"
+        columnComments["deriv_assets"] = "衍生金融资产"
+        columnComments["rr_reins_une_prem"] = "应收分保未到期责任准备金"
+        columnComments["rr_reins_outstd_cla"] = "应收分保未决赔款准备金"
+        columnComments["rr_reins_lins_liab"] = "应收分保寿险责任准备金"
+        columnComments["rr_reins_lthins_liab"] = "应收分保长期健康险责任准备金"
+        columnComments["refund_depos"] = "存出保证金"
+        columnComments["ph_pledge_loans"] = "保户质押贷款"
+        columnComments["refund_cap_depos"] = "存出资本保证金"
+        columnComments["indep_acct_assets"] = "独立账户资产"
+        columnComments["client_depos"] = "其中：客户资金存款"
+        columnComments["client_prov"] = "其中：客户备付金"
+        columnComments["transac_seat_fee"] = "其中:交易席位费"
+        columnComments["invest_as_receiv"] = "应收款项类投资"
+        columnComments["total_assets"] = "资产总计"
+        columnComments["lt_borr"] = "长期借款"
+        columnComments["st_borr"] = "短期借款"
+        columnComments["cb_borr"] = "向中央银行借款"
+        columnComments["depos_ib_deposits"] = "吸收存款及同业存放"
+        columnComments["loan_oth_bank"] = "拆入资金"
+        columnComments["trading_fl"] = "交易性金融负债"
+        columnComments["notes_payable"] = "应付票据"
+        columnComments["acct_payable"] = "应付账款"
+        columnComments["adv_receipts"] = "预收款项"
+        columnComments["sold_for_repur_fa"] = "卖出回购金融资产款"
+        columnComments["comm_payable"] = "应付手续费及佣金"
+        columnComments["payroll_payable"] = "应付职工薪酬"
+        columnComments["taxes_payable"] = "应交税费"
+        columnComments["int_payable"] = "应付利息"
+        columnComments["div_payable"] = "应付股利"
+        columnComments["oth_payable"] = "其他应付款"
+        columnComments["acc_exp"] = "预提费用"
+        columnComments["deferred_inc"] = "递延收益"
+        columnComments["st_bonds_payable"] = "应付短期债券"
+        columnComments["payable_to_reinsurer"] = "应付分保账款"
+        columnComments["rsrv_insur_cont"] = "保险合同准备金"
+        columnComments["acting_trading_sec"] = "代理买卖证券款"
+        columnComments["acting_uw_sec"] = "代理承销证券款"
+        columnComments["non_cur_liab_due_1y"] = "一年内到期的非流动负债"
+        columnComments["oth_cur_liab"] = "其他流动负债"
+        columnComments["total_cur_liab"] = "流动负债合计"
+        columnComments["bond_payable"] = "应付债券"
+        columnComments["lt_payable"] = "长期应付款"
+        columnComments["specific_payables"] = "专项应付款"
+        columnComments["estimated_liab"] = "预计负债"
+        columnComments["defer_tax_liab"] = "递延所得税负债"
+        columnComments["defer_inc_non_cur_liab"] = "递延收益-非流动负债"
+        columnComments["oth_ncl"] = "其他非流动负债"
+        columnComments["total_ncl"] = "非流动负债合计"
+        columnComments["depos_oth_bfi"] = "同业和其它金融机构存放款项"
+        columnComments["deriv_liab"] = "衍生金融负债"
+        columnComments["depos"] = "吸收存款"
+        columnComments["agency_bus_liab"] = "代理业务负债"
+        columnComments["oth_liab"] = "其他负债"
+        columnComments["prem_receiv_adva"] = "预收保费"
+        columnComments["depos_received"] = "存入保证金"
+        columnComments["ph_invest"] = "保户储金及投资款"
+        columnComments["reser_une_prem"] = "未到期责任准备金"
+        columnComments["reser_outstd_claims"] = "未决赔款准备金"
+        columnComments["reser_lins_liab"] = "寿险责任准备金"
+        columnComments["reser_lthins_liab"] = "长期健康险责任准备金"
+        columnComments["indept_acc_liab"] = "独立账户负债"
+        columnComments["pledge_borr"] = "其中:质押借款"
+        columnComments["indem_payable"] = "应付赔付款"
+        columnComments["policy_div_payable"] = "应付保单红利"
+        columnComments["total_liab"] = "负债合计"
+        columnComments["treasury_share"] = "减:库存股"
+        columnComments["ordin_risk_reser"] = "一般风险准备"
+        columnComments["forex_differ"] = "外币报表折算差额"
+        columnComments["invest_loss_unconf"] = "未确认的投资损失"
+        columnComments["minority_int"] = "少数股东权益"
+        columnComments["total_hldr_eqy_exc_min_int"] = "股东权益合计(不含少数股东权益)"
+        columnComments["total_hldr_eqy_inc_min_int"] = "股东权益合计(含少数股东权益)"
+        columnComments["total_liab_hldr_eqy"] = "负债及股东权益总计"
+        columnComments["lt_payroll_payable"] = "长期应付职工薪酬"
+        columnComments["oth_comp_income"] = "其他综合收益"
+        columnComments["oth_eqt_tools"] = "其他权益工具"
+        columnComments["oth_eqt_tools_p_shr"] = "其他权益工具(优先股)"
+        columnComments["lending_funds"] = "融出资金"
+        columnComments["acc_receivable"] = "应收款项"
+        columnComments["st_fin_payable"] = "应付短期融资款"
+        columnComments["payables"] = "应付款项"
+        columnComments["hfs_assets"] = "持有待售的资产"
+        columnComments["hfs_sales"] = "持有待售的负债"
+        columnComments["cost_fin_assets"] = "以摊余成本计量的金融资产"
+        columnComments["fair_value_fin_assets"] = "以公允价值计量且其变动计入其他综合收益的金融资产"
+        columnComments["contract_assets"] = "合同资产"
+        columnComments["contract_liab"] = "合同负债"
+        columnComments["accounts_receiv_bill"] = "应收票据及应收账款"
+        columnComments["accounts_pay"] = "应付票据及应付账款"
+        columnComments["oth_rcv_total"] = "其他应收款(合计)（元）"
+        columnComments["fix_assets_total"] = "固定资产(合计)(元)"
+        columnComments["cip_total"] = "在建工程(合计)(元)"
+        columnComments["oth_pay_total"] = "其他应付款(合计)(元)"
+        columnComments["long_pay_total"] = "长期应付款(合计)(元)"
+        columnComments["debt_invest"] = "债权投资(元)"
+        columnComments["oth_debt_invest"] = "其他债权投资(元)"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createQuarterStockCashflow(){
+    dbName = "dfs://quarter_factor"
+    tbName = "quarter_stock_cashflow"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as net_profit,
+            array(DOUBLE, 0) as finan_exp,
+            array(DOUBLE, 0) as c_fr_sale_sg,
+            array(DOUBLE, 0) as recp_tax_rends,
+            array(DOUBLE, 0) as n_depos_incr_fi,
+            array(DOUBLE, 0) as n_incr_loans_cb,
+            array(DOUBLE, 0) as n_inc_borr_oth_fi,
+            array(DOUBLE, 0) as prem_fr_orig_contr,
+            array(DOUBLE, 0) as n_incr_insured_dep,
+            array(DOUBLE, 0) as n_reinsur_prem,
+            array(DOUBLE, 0) as n_incr_disp_tfa,
+            array(DOUBLE, 0) as ifc_cash_incr,
+            array(DOUBLE, 0) as n_incr_disp_faas,
+            array(DOUBLE, 0) as n_incr_loans_oth_bank,
+            array(DOUBLE, 0) as n_cap_incr_repur,
+            array(DOUBLE, 0) as c_fr_oth_operate_a,
+            array(DOUBLE, 0) as c_inf_fr_operate_a,
+            array(DOUBLE, 0) as c_paid_goods_s,
+            array(DOUBLE, 0) as c_paid_to_for_empl,
+            array(DOUBLE, 0) as c_paid_for_taxes,
+            array(DOUBLE, 0) as n_incr_clt_loan_adv,
+            array(DOUBLE, 0) as n_incr_dep_cbob,
+            array(DOUBLE, 0) as c_pay_claims_orig_inco,
+            array(DOUBLE, 0) as pay_handling_chrg,
+            array(DOUBLE, 0) as pay_comm_insur_plcy,
+            array(DOUBLE, 0) as oth_cash_pay_oper_act,
+            array(DOUBLE, 0) as st_cash_out_act,
+            array(DOUBLE, 0) as n_cashflow_act,
+            array(DOUBLE, 0) as oth_recp_ral_inv_act,
+            array(DOUBLE, 0) as c_disp_withdrwl_invest,
+            array(DOUBLE, 0) as c_recp_return_invest,
+            array(DOUBLE, 0) as n_recp_disp_fiolta,
+            array(DOUBLE, 0) as n_recp_disp_sobu,
+            array(DOUBLE, 0) as stot_inflows_inv_act,
+            array(DOUBLE, 0) as c_pay_acq_const_fiolta,
+            array(DOUBLE, 0) as c_paid_invest,
+            array(DOUBLE, 0) as n_disp_subs_oth_biz,
+            array(DOUBLE, 0) as oth_pay_ral_inv_act,
+            array(DOUBLE, 0) as n_incr_pledge_loan,
+            array(DOUBLE, 0) as stot_out_inv_act,
+            array(DOUBLE, 0) as n_cashflow_inv_act,
+            array(DOUBLE, 0) as c_recp_borrow,
+            array(DOUBLE, 0) as proc_issue_bonds,
+            array(DOUBLE, 0) as oth_cash_recp_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cash_in_fnc_act,
+            array(DOUBLE, 0) as free_cashflow,
+            array(DOUBLE, 0) as c_prepay_amt_borr,
+            array(DOUBLE, 0) as c_pay_dist_dpcp_int_exp,
+            array(DOUBLE, 0) as incl_dvd_profit_paid_sc_ms,
+            array(DOUBLE, 0) as oth_cashpay_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cashout_fnc_act,
+            array(DOUBLE, 0) as n_cash_flows_fnc_act,
+            array(DOUBLE, 0) as eff_fx_flu_cash,
+            array(DOUBLE, 0) as n_incr_cash_cash_equ,
+            array(DOUBLE, 0) as c_cash_equ_beg_period,
+            array(DOUBLE, 0) as c_cash_equ_end_period,
+            array(DOUBLE, 0) as c_recp_cap_contrib,
+            array(DOUBLE, 0) as incl_cash_rec_saims,
+            array(DOUBLE, 0) as uncon_invest_loss,
+            array(DOUBLE, 0) as prov_depr_assets,
+            array(DOUBLE, 0) as depr_fa_coga_dpba,
+            array(DOUBLE, 0) as amort_intang_assets,
+            array(DOUBLE, 0) as lt_amort_deferred_exp,
+            array(DOUBLE, 0) as decr_deferred_exp,
+            array(DOUBLE, 0) as incr_acc_exp,
+            array(DOUBLE, 0) as loss_disp_fiolta,
+            array(DOUBLE, 0) as loss_scr_fa,
+            array(DOUBLE, 0) as loss_fv_chg,
+            array(DOUBLE, 0) as invest_loss,
+            array(DOUBLE, 0) as decr_def_inc_tax_assets,
+            array(DOUBLE, 0) as incr_def_inc_tax_liab,
+            array(DOUBLE, 0) as decr_inventories,
+            array(DOUBLE, 0) as decr_oper_payable,
+            array(DOUBLE, 0) as incr_oper_payable,
+            array(DOUBLE, 0) as others,
+            array(DOUBLE, 0) as im_net_cashflow_oper_act,
+            array(DOUBLE, 0) as conv_debt_into_cap,
+            array(DOUBLE, 0) as conv_copbonds_due_within_1y,
+            array(DOUBLE, 0) as fa_fnc_leases,
+            array(DOUBLE, 0) as im_n_incr_cash_equ,
+            array(DOUBLE, 0) as net_dism_capital_add,
+            array(DOUBLE, 0) as net_cash_rece_sec,
+            array(DOUBLE, 0) as credit_impa_loss,
+            array(DOUBLE, 0) as use_right_asset_dep,
+            array(DOUBLE, 0) as oth_loss_asset,
+            array(DOUBLE, 0) as end_bal_cash,
+            array(DOUBLE, 0) as beg_bal_cash,
+            array(DOUBLE, 0) as end_bal_cash_equ,
+            array(DOUBLE, 0) as beg_bal_cash_equ,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["report_type"] = "报表类型"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["net_profit"] = "净利润"
+        columnComments["finan_exp"] = "财务费用"
+        columnComments["c_fr_sale_sg"] = "销售商品、提供劳务收到的现金"
+        columnComments["recp_tax_rends"] = "收到的税费返还"
+        columnComments["n_depos_incr_fi"] = "客户存款和同业存放款项净增加额"
+        columnComments["n_incr_loans_cb"] = "向中央银行借款净增加额"
+        columnComments["n_inc_borr_oth_fi"] = "向其他金融机构拆入资金净增加额"
+        columnComments["prem_fr_orig_contr"] = "收到原保险合同保费取得的现金"
+        columnComments["n_incr_insured_dep"] = "保户储金净增加额"
+        columnComments["n_reinsur_prem"] = "收到再保业务现金净额"
+        columnComments["n_incr_disp_tfa"] = "处置交易性金融资产净增加额"
+        columnComments["ifc_cash_incr"] = "收取利息和手续费净增加额"
+        columnComments["n_incr_disp_faas"] = "处置可供出售金融资产净增加额"
+        columnComments["n_incr_loans_oth_bank"] = "拆入资金净增加额"
+        columnComments["n_cap_incr_repur"] = "回购业务资金净增加额"
+        columnComments["c_fr_oth_operate_a"] = "收到其他与经营活动有关的现金"
+        columnComments["c_inf_fr_operate_a"] = "经营活动现金流入小计"
+        columnComments["c_paid_goods_s"] = "购买商品、接受劳务支付的现金"
+        columnComments["c_paid_to_for_empl"] = "支付给职工以及为职工支付的现金"
+        columnComments["c_paid_for_taxes"] = "支付的各项税费"
+        columnComments["n_incr_clt_loan_adv"] = "客户贷款及垫款净增加额"
+        columnComments["n_incr_dep_cbob"] = "存放央行和同业款项净增加额"
+        columnComments["c_pay_claims_orig_inco"] = "支付原保险合同赔付款项的现金"
+        columnComments["pay_handling_chrg"] = "支付手续费的现金"
+        columnComments["pay_comm_insur_plcy"] = "支付保单红利的现金"
+        columnComments["oth_cash_pay_oper_act"] = "支付其他与经营活动有关的现金"
+        columnComments["st_cash_out_act"] = "经营活动现金流出小计"
+        columnComments["n_cashflow_act"] = "经营活动产生的现金流量净额"
+        columnComments["oth_recp_ral_inv_act"] = "收到其他与投资活动有关的现金"
+        columnComments["c_disp_withdrwl_invest"] = "收回投资收到的现金"
+        columnComments["c_recp_return_invest"] = "取得投资收益收到的现金"
+        columnComments["n_recp_disp_fiolta"] = "处置固定资产、无形资产和其他长期资产收回的现金净额"
+        columnComments["n_recp_disp_sobu"] = "处置子公司及其他营业单位收到的现金净额"
+        columnComments["stot_inflows_inv_act"] = "投资活动现金流入小计"
+        columnComments["c_pay_acq_const_fiolta"] = "购建固定资产、无形资产和其他长期资产支付的现金"
+        columnComments["c_paid_invest"] = "投资支付的现金"
+        columnComments["n_disp_subs_oth_biz"] = "取得子公司及其他营业单位支付的现金净额"
+        columnComments["oth_pay_ral_inv_act"] = "支付其他与投资活动有关的现金"
+        columnComments["n_incr_pledge_loan"] = "质押贷款净增加额"
+        columnComments["stot_out_inv_act"] = "投资活动现金流出小计"
+        columnComments["n_cashflow_inv_act"] = "投资活动产生的现金流量净额"
+        columnComments["c_recp_borrow"] = "取得借款收到的现金"
+        columnComments["proc_issue_bonds"] = "发行债券收到的现金"
+        columnComments["oth_cash_recp_ral_fnc_act"] = "收到其他与筹资活动有关的现金"
+        columnComments["stot_cash_in_fnc_act"] = "筹资活动现金流入小计"
+        columnComments["free_cashflow"] = "企业自由现金流量"
+        columnComments["c_prepay_amt_borr"] = "偿还债务支付的现金"
+        columnComments["c_pay_dist_dpcp_int_exp"] = "分配股利、利润或偿付利息支付的现金"
+        columnComments["incl_dvd_profit_paid_sc_ms"] = "其中:子公司支付给少数股东的股利、利润"
+        columnComments["oth_cashpay_ral_fnc_act"] = "支付其他与筹资活动有关的现金"
+        columnComments["stot_cashout_fnc_act"] = "筹资活动现金流出小计"
+        columnComments["n_cash_flows_fnc_act"] = "筹资活动产生的现金流量净额"
+        columnComments["eff_fx_flu_cash"] = "汇率变动对现金的影响"
+        columnComments["n_incr_cash_cash_equ"] = "现金及现金等价物净增加额"
+        columnComments["c_cash_equ_beg_period"] = "期初现金及现金等价物余额"
+        columnComments["c_cash_equ_end_period"] = "期末现金及现金等价物余额"
+        columnComments["c_recp_cap_contrib"] = "吸收投资收到的现金"
+        columnComments["incl_cash_rec_saims"] = "其中:子公司吸收少数股东投资收到的现金"
+        columnComments["uncon_invest_loss"] = "未确认投资损失"
+        columnComments["prov_depr_assets"] = "加:资产减值准备"
+        columnComments["depr_fa_coga_dpba"] = "固定资产折旧、油气资产折耗、生产性生物资产折旧"
+        columnComments["amort_intang_assets"] = "无形资产摊销"
+        columnComments["lt_amort_deferred_exp"] = "长期待摊费用摊销"
+        columnComments["decr_deferred_exp"] = "待摊费用减少"
+        columnComments["incr_acc_exp"] = "预提费用增加"
+        columnComments["loss_disp_fiolta"] = "处置固定、无形资产和其他长期资产的损失"
+        columnComments["loss_scr_fa"] = "固定资产报废损失"
+        columnComments["loss_fv_chg"] = "公允价值变动损失"
+        columnComments["invest_loss"] = "投资损失"
+        columnComments["decr_def_inc_tax_assets"] = "递延所得税资产减少"
+        columnComments["incr_def_inc_tax_liab"] = "递延所得税负债增加"
+        columnComments["decr_inventories"] = "存货的减少"
+        columnComments["decr_oper_payable"] = "经营性应收项目的减少"
+        columnComments["incr_oper_payable"] = "经营性应付项目的增加"
+        columnComments["others"] = "其他"
+        columnComments["im_net_cashflow_oper_act"] = "经营活动产生的现金流量净额(间接法)"
+        columnComments["conv_debt_into_cap"] = "债务转为资本"
+        columnComments["conv_copbonds_due_within_1y"] = "一年内到期的可转换公司债券"
+        columnComments["fa_fnc_leases"] = "融资租入固定资产"
+        columnComments["im_n_incr_cash_equ"] = "现金及现金等价物净增加额(间接法)"
+        columnComments["net_dism_capital_add"] = "拆出资金净增加额"
+        columnComments["net_cash_rece_sec"] = "代理买卖证券收到的现金净额(元)"
+        columnComments["credit_impa_loss"] = "信用减值损失"
+        columnComments["use_right_asset_dep"] = "使用权资产折旧"
+        columnComments["oth_loss_asset"] = "其他资产减值损失"
+        columnComments["end_bal_cash"] = "现金的期末余额"
+        columnComments["beg_bal_cash"] = "减:现金的期初余额"
+        columnComments["end_bal_cash_equ"] = "加:现金等价物的期末余额"
+        columnComments["beg_bal_cash_equ"] = "减:现金等价物的期初余额"
+        columnComments["update_flag"] = "更新标志(1最新）"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createYearStockCashflow(){
+    dbName = "dfs://year_factor"
+    tbName = "year_stock_cashflow"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as net_profit,
+            array(DOUBLE, 0) as finan_exp,
+            array(DOUBLE, 0) as c_fr_sale_sg,
+            array(DOUBLE, 0) as recp_tax_rends,
+            array(DOUBLE, 0) as n_depos_incr_fi,
+            array(DOUBLE, 0) as n_incr_loans_cb,
+            array(DOUBLE, 0) as n_inc_borr_oth_fi,
+            array(DOUBLE, 0) as prem_fr_orig_contr,
+            array(DOUBLE, 0) as n_incr_insured_dep,
+            array(DOUBLE, 0) as n_reinsur_prem,
+            array(DOUBLE, 0) as n_incr_disp_tfa,
+            array(DOUBLE, 0) as ifc_cash_incr,
+            array(DOUBLE, 0) as n_incr_disp_faas,
+            array(DOUBLE, 0) as n_incr_loans_oth_bank,
+            array(DOUBLE, 0) as n_cap_incr_repur,
+            array(DOUBLE, 0) as c_fr_oth_operate_a,
+            array(DOUBLE, 0) as c_inf_fr_operate_a,
+            array(DOUBLE, 0) as c_paid_goods_s,
+            array(DOUBLE, 0) as c_paid_to_for_empl,
+            array(DOUBLE, 0) as c_paid_for_taxes,
+            array(DOUBLE, 0) as n_incr_clt_loan_adv,
+            array(DOUBLE, 0) as n_incr_dep_cbob,
+            array(DOUBLE, 0) as c_pay_claims_orig_inco,
+            array(DOUBLE, 0) as pay_handling_chrg,
+            array(DOUBLE, 0) as pay_comm_insur_plcy,
+            array(DOUBLE, 0) as oth_cash_pay_oper_act,
+            array(DOUBLE, 0) as st_cash_out_act,
+            array(DOUBLE, 0) as n_cashflow_act,
+            array(DOUBLE, 0) as oth_recp_ral_inv_act,
+            array(DOUBLE, 0) as c_disp_withdrwl_invest,
+            array(DOUBLE, 0) as c_recp_return_invest,
+            array(DOUBLE, 0) as n_recp_disp_fiolta,
+            array(DOUBLE, 0) as n_recp_disp_sobu,
+            array(DOUBLE, 0) as stot_inflows_inv_act,
+            array(DOUBLE, 0) as c_pay_acq_const_fiolta,
+            array(DOUBLE, 0) as c_paid_invest,
+            array(DOUBLE, 0) as n_disp_subs_oth_biz,
+            array(DOUBLE, 0) as oth_pay_ral_inv_act,
+            array(DOUBLE, 0) as n_incr_pledge_loan,
+            array(DOUBLE, 0) as stot_out_inv_act,
+            array(DOUBLE, 0) as n_cashflow_inv_act,
+            array(DOUBLE, 0) as c_recp_borrow,
+            array(DOUBLE, 0) as proc_issue_bonds,
+            array(DOUBLE, 0) as oth_cash_recp_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cash_in_fnc_act,
+            array(DOUBLE, 0) as free_cashflow,
+            array(DOUBLE, 0) as c_prepay_amt_borr,
+            array(DOUBLE, 0) as c_pay_dist_dpcp_int_exp,
+            array(DOUBLE, 0) as incl_dvd_profit_paid_sc_ms,
+            array(DOUBLE, 0) as oth_cashpay_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cashout_fnc_act,
+            array(DOUBLE, 0) as n_cash_flows_fnc_act,
+            array(DOUBLE, 0) as eff_fx_flu_cash,
+            array(DOUBLE, 0) as n_incr_cash_cash_equ,
+            array(DOUBLE, 0) as c_cash_equ_beg_period,
+            array(DOUBLE, 0) as c_cash_equ_end_period,
+            array(DOUBLE, 0) as c_recp_cap_contrib,
+            array(DOUBLE, 0) as incl_cash_rec_saims,
+            array(DOUBLE, 0) as uncon_invest_loss,
+            array(DOUBLE, 0) as prov_depr_assets,
+            array(DOUBLE, 0) as depr_fa_coga_dpba,
+            array(DOUBLE, 0) as amort_intang_assets,
+            array(DOUBLE, 0) as lt_amort_deferred_exp,
+            array(DOUBLE, 0) as decr_deferred_exp,
+            array(DOUBLE, 0) as incr_acc_exp,
+            array(DOUBLE, 0) as loss_disp_fiolta,
+            array(DOUBLE, 0) as loss_scr_fa,
+            array(DOUBLE, 0) as loss_fv_chg,
+            array(DOUBLE, 0) as invest_loss,
+            array(DOUBLE, 0) as decr_def_inc_tax_assets,
+            array(DOUBLE, 0) as incr_def_inc_tax_liab,
+            array(DOUBLE, 0) as decr_inventories,
+            array(DOUBLE, 0) as decr_oper_payable,
+            array(DOUBLE, 0) as incr_oper_payable,
+            array(DOUBLE, 0) as others,
+            array(DOUBLE, 0) as im_net_cashflow_oper_act,
+            array(DOUBLE, 0) as conv_debt_into_cap,
+            array(DOUBLE, 0) as conv_copbonds_due_within_1y,
+            array(DOUBLE, 0) as fa_fnc_leases,
+            array(DOUBLE, 0) as im_n_incr_cash_equ,
+            array(DOUBLE, 0) as net_dism_capital_add,
+            array(DOUBLE, 0) as net_cash_rece_sec,
+            array(DOUBLE, 0) as credit_impa_loss,
+            array(DOUBLE, 0) as use_right_asset_dep,
+            array(DOUBLE, 0) as oth_loss_asset,
+            array(DOUBLE, 0) as end_bal_cash,
+            array(DOUBLE, 0) as beg_bal_cash,
+            array(DOUBLE, 0) as end_bal_cash_equ,
+            array(DOUBLE, 0) as beg_bal_cash_equ,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["report_type"] = "报表类型"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["net_profit"] = "净利润"
+        columnComments["finan_exp"] = "财务费用"
+        columnComments["c_fr_sale_sg"] = "销售商品、提供劳务收到的现金"
+        columnComments["recp_tax_rends"] = "收到的税费返还"
+        columnComments["n_depos_incr_fi"] = "客户存款和同业存放款项净增加额"
+        columnComments["n_incr_loans_cb"] = "向中央银行借款净增加额"
+        columnComments["n_inc_borr_oth_fi"] = "向其他金融机构拆入资金净增加额"
+        columnComments["prem_fr_orig_contr"] = "收到原保险合同保费取得的现金"
+        columnComments["n_incr_insured_dep"] = "保户储金净增加额"
+        columnComments["n_reinsur_prem"] = "收到再保业务现金净额"
+        columnComments["n_incr_disp_tfa"] = "处置交易性金融资产净增加额"
+        columnComments["ifc_cash_incr"] = "收取利息和手续费净增加额"
+        columnComments["n_incr_disp_faas"] = "处置可供出售金融资产净增加额"
+        columnComments["n_incr_loans_oth_bank"] = "拆入资金净增加额"
+        columnComments["n_cap_incr_repur"] = "回购业务资金净增加额"
+        columnComments["c_fr_oth_operate_a"] = "收到其他与经营活动有关的现金"
+        columnComments["c_inf_fr_operate_a"] = "经营活动现金流入小计"
+        columnComments["c_paid_goods_s"] = "购买商品、接受劳务支付的现金"
+        columnComments["c_paid_to_for_empl"] = "支付给职工以及为职工支付的现金"
+        columnComments["c_paid_for_taxes"] = "支付的各项税费"
+        columnComments["n_incr_clt_loan_adv"] = "客户贷款及垫款净增加额"
+        columnComments["n_incr_dep_cbob"] = "存放央行和同业款项净增加额"
+        columnComments["c_pay_claims_orig_inco"] = "支付原保险合同赔付款项的现金"
+        columnComments["pay_handling_chrg"] = "支付手续费的现金"
+        columnComments["pay_comm_insur_plcy"] = "支付保单红利的现金"
+        columnComments["oth_cash_pay_oper_act"] = "支付其他与经营活动有关的现金"
+        columnComments["st_cash_out_act"] = "经营活动现金流出小计"
+        columnComments["n_cashflow_act"] = "经营活动产生的现金流量净额"
+        columnComments["oth_recp_ral_inv_act"] = "收到其他与投资活动有关的现金"
+        columnComments["c_disp_withdrwl_invest"] = "收回投资收到的现金"
+        columnComments["c_recp_return_invest"] = "取得投资收益收到的现金"
+        columnComments["n_recp_disp_fiolta"] = "处置固定资产、无形资产和其他长期资产收回的现金净额"
+        columnComments["n_recp_disp_sobu"] = "处置子公司及其他营业单位收到的现金净额"
+        columnComments["stot_inflows_inv_act"] = "投资活动现金流入小计"
+        columnComments["c_pay_acq_const_fiolta"] = "购建固定资产、无形资产和其他长期资产支付的现金"
+        columnComments["c_paid_invest"] = "投资支付的现金"
+        columnComments["n_disp_subs_oth_biz"] = "取得子公司及其他营业单位支付的现金净额"
+        columnComments["oth_pay_ral_inv_act"] = "支付其他与投资活动有关的现金"
+        columnComments["n_incr_pledge_loan"] = "质押贷款净增加额"
+        columnComments["stot_out_inv_act"] = "投资活动现金流出小计"
+        columnComments["n_cashflow_inv_act"] = "投资活动产生的现金流量净额"
+        columnComments["c_recp_borrow"] = "取得借款收到的现金"
+        columnComments["proc_issue_bonds"] = "发行债券收到的现金"
+        columnComments["oth_cash_recp_ral_fnc_act"] = "收到其他与筹资活动有关的现金"
+        columnComments["stot_cash_in_fnc_act"] = "筹资活动现金流入小计"
+        columnComments["free_cashflow"] = "企业自由现金流量"
+        columnComments["c_prepay_amt_borr"] = "偿还债务支付的现金"
+        columnComments["c_pay_dist_dpcp_int_exp"] = "分配股利、利润或偿付利息支付的现金"
+        columnComments["incl_dvd_profit_paid_sc_ms"] = "其中:子公司支付给少数股东的股利、利润"
+        columnComments["oth_cashpay_ral_fnc_act"] = "支付其他与筹资活动有关的现金"
+        columnComments["stot_cashout_fnc_act"] = "筹资活动现金流出小计"
+        columnComments["n_cash_flows_fnc_act"] = "筹资活动产生的现金流量净额"
+        columnComments["eff_fx_flu_cash"] = "汇率变动对现金的影响"
+        columnComments["n_incr_cash_cash_equ"] = "现金及现金等价物净增加额"
+        columnComments["c_cash_equ_beg_period"] = "期初现金及现金等价物余额"
+        columnComments["c_cash_equ_end_period"] = "期末现金及现金等价物余额"
+        columnComments["c_recp_cap_contrib"] = "吸收投资收到的现金"
+        columnComments["incl_cash_rec_saims"] = "其中:子公司吸收少数股东投资收到的现金"
+        columnComments["uncon_invest_loss"] = "未确认投资损失"
+        columnComments["prov_depr_assets"] = "加:资产减值准备"
+        columnComments["depr_fa_coga_dpba"] = "固定资产折旧、油气资产折耗、生产性生物资产折旧"
+        columnComments["amort_intang_assets"] = "无形资产摊销"
+        columnComments["lt_amort_deferred_exp"] = "长期待摊费用摊销"
+        columnComments["decr_deferred_exp"] = "待摊费用减少"
+        columnComments["incr_acc_exp"] = "预提费用增加"
+        columnComments["loss_disp_fiolta"] = "处置固定、无形资产和其他长期资产的损失"
+        columnComments["loss_scr_fa"] = "固定资产报废损失"
+        columnComments["loss_fv_chg"] = "公允价值变动损失"
+        columnComments["invest_loss"] = "投资损失"
+        columnComments["decr_def_inc_tax_assets"] = "递延所得税资产减少"
+        columnComments["incr_def_inc_tax_liab"] = "递延所得税负债增加"
+        columnComments["decr_inventories"] = "存货的减少"
+        columnComments["decr_oper_payable"] = "经营性应收项目的减少"
+        columnComments["incr_oper_payable"] = "经营性应付项目的增加"
+        columnComments["others"] = "其他"
+        columnComments["im_net_cashflow_oper_act"] = "经营活动产生的现金流量净额(间接法)"
+        columnComments["conv_debt_into_cap"] = "债务转为资本"
+        columnComments["conv_copbonds_due_within_1y"] = "一年内到期的可转换公司债券"
+        columnComments["fa_fnc_leases"] = "融资租入固定资产"
+        columnComments["im_n_incr_cash_equ"] = "现金及现金等价物净增加额(间接法)"
+        columnComments["net_dism_capital_add"] = "拆出资金净增加额"
+        columnComments["net_cash_rece_sec"] = "代理买卖证券收到的现金净额(元)"
+        columnComments["credit_impa_loss"] = "信用减值损失"
+        columnComments["use_right_asset_dep"] = "使用权资产折旧"
+        columnComments["oth_loss_asset"] = "其他资产减值损失"
+        columnComments["end_bal_cash"] = "现金的期末余额"
+        columnComments["beg_bal_cash"] = "减:现金的期初余额"
+        columnComments["end_bal_cash_equ"] = "加:现金等价物的期末余额"
+        columnComments["beg_bal_cash_equ"] = "减:现金等价物的期初余额"
+        columnComments["update_flag"] = "更新标志(1最新）"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createStockIndexBasic(){
+    dbName = "dfs://basic_factor"
+    tbName = "stock_index_basic"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(SYMBOL, 0) as name,
+            array(SYMBOL, 0) as fullname,
+            array(SYMBOL, 0) as market,
+            array(SYMBOL, 0) as publisher,
+            array(SYMBOL, 0) as index_type,
+            array(SYMBOL, 0) as category,
+            array(DATE, 0) as base_date,
+            array(DOUBLE, 0) as base_point,
+            array(DATE, 0) as list_date,
+            array(SYMBOL, 0) as weight_rule,
+            array(STRING, 0) as desc,
+            array(DATE, 0) as exp_date,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createTable(
+            table = schemaTB,
+            tableName = tbName, 
+            sortColumns=`ts_code,
+            keepDuplicates=ALL
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS代码"
+        columnComments["name"] = "简称"
+        columnComments["fullname"] = "指数全称"
+        columnComments["market"] = "市场"
+        columnComments["publisher"] = "发布方"
+        columnComments["index_type"] = "指数风格"
+        columnComments["category"] = "指数类别"
+        columnComments["base_date"] = "基期"
+        columnComments["base_point"] = "基点"
+        columnComments["list_date"] = "发布日期"
+        columnComments["weight_rule"] = "加权方式"
+        columnComments["desc"] = "描述"
+        columnComments["exp_date"] = "终止日期"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+/*
+def createStockIncome(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_income"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as basic_eps,
+            array(DOUBLE, 0) as diluted_eps,
+            array(DOUBLE, 0) as total_revenue,
+            array(DOUBLE, 0) as revenue,
+            array(DOUBLE, 0) as int_income,
+            array(DOUBLE, 0) as prem_earned,
+            array(DOUBLE, 0) as comm_income,
+            array(DOUBLE, 0) as n_commis_income,
+            array(DOUBLE, 0) as n_oth_income,
+            array(DOUBLE, 0) as n_oth_b_income,
+            array(DOUBLE, 0) as prem_income,
+            array(DOUBLE, 0) as out_prem,
+            array(DOUBLE, 0) as une_prem_reser,
+            array(DOUBLE, 0) as reins_income,
+            array(DOUBLE, 0) as n_sec_tb_income,
+            array(DOUBLE, 0) as n_sec_uw_income,
+            array(DOUBLE, 0) as n_asset_mg_income,
+            array(DOUBLE, 0) as oth_b_income,
+            array(DOUBLE, 0) as fv_value_chg_gain,
+            array(DOUBLE, 0) as invest_income,
+            array(DOUBLE, 0) as ass_invest_income,
+            array(DOUBLE, 0) as forex_gain,
+            array(DOUBLE, 0) as total_cogs,
+            array(DOUBLE, 0) as oper_cost,
+            array(DOUBLE, 0) as int_exp,
+            array(DOUBLE, 0) as comm_exp,
+            array(DOUBLE, 0) as biz_tax_surchg,
+            array(DOUBLE, 0) as sell_exp,
+            array(DOUBLE, 0) as admin_exp,
+            array(DOUBLE, 0) as fin_exp,
+            array(DOUBLE, 0) as assets_impair_loss,
+            array(DOUBLE, 0) as prem_refund,
+            array(DOUBLE, 0) as compens_payout,
+            array(DOUBLE, 0) as reser_insur_liab,
+            array(DOUBLE, 0) as div_payt,
+            array(DOUBLE, 0) as reins_exp,
+            array(DOUBLE, 0) as oper_exp,
+            array(DOUBLE, 0) as compens_payout_refu,
+            array(DOUBLE, 0) as insur_reser_refu,
+            array(DOUBLE, 0) as reins_cost_refund,
+            array(DOUBLE, 0) as other_bus_cost,
+            array(DOUBLE, 0) as operate_profit,
+            array(DOUBLE, 0) as non_oper_income,
+            array(DOUBLE, 0) as non_oper_exp,
+            array(DOUBLE, 0) as nca_disploss,
+            array(DOUBLE, 0) as total_profit,
+            array(DOUBLE, 0) as income_tax,
+            array(DOUBLE, 0) as n_income,
+            array(DOUBLE, 0) as n_income_attr_p,
+            array(DOUBLE, 0) as minority_gain,
+            array(DOUBLE, 0) as oth_compr_income,
+            array(DOUBLE, 0) as t_compr_income,
+            array(DOUBLE, 0) as compr_inc_attr_p,
+            array(DOUBLE, 0) as compr_inc_attr_m_s,
+            array(DOUBLE, 0) as ebit,
+            array(DOUBLE, 0) as ebitda,
+            array(DOUBLE, 0) as insurance_exp,
+            array(DOUBLE, 0) as undist_profit,
+            array(DOUBLE, 0) as distable_profit,
+            array(DOUBLE, 0) as rd_exp,
+            array(DOUBLE, 0) as fin_exp_int_exp,
+            array(DOUBLE, 0) as fin_exp_int_inc,
+            array(DOUBLE, 0) as transfer_surplus_rese,
+            array(DOUBLE, 0) as transfer_housing_imprest,
+            array(DOUBLE, 0) as transfer_oth,
+            array(DOUBLE, 0) as adj_lossgain,
+            array(DOUBLE, 0) as withdra_legal_surplus,
+            array(DOUBLE, 0) as withdra_legal_pubfund,
+            array(DOUBLE, 0) as withdra_biz_devfund,
+            array(DOUBLE, 0) as withdra_rese_fund,
+            array(DOUBLE, 0) as withdra_oth_ersu,
+            array(DOUBLE, 0) as workers_welfare,
+            array(DOUBLE, 0) as distr_profit_shrhder,
+            array(DOUBLE, 0) as prfshare_payable_dvd,
+            array(DOUBLE, 0) as comshare_payable_dvd,
+            array(DOUBLE, 0) as capit_comstock_div,
+            array(DOUBLE, 0) as continued_net_profit,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报告类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["basic_eps"] = "基本每股收益"
+        columnComments["diluted_eps"] = "稀释每股收益"
+        columnComments["total_revenue"] = "营业总收入"
+        columnComments["revenue"] = "营业收入"
+        columnComments["int_income"] = "利息收入"
+        columnComments["prem_earned"] = "已赚保费"
+        columnComments["comm_income"] = "手续费及佣金收入"
+        columnComments["n_commis_income"] = "手续费及佣金净收入"
+        columnComments["n_oth_income"] = "其他经营净收益"
+        columnComments["n_oth_b_income"] = "加:其他业务净收益"
+        columnComments["prem_income"] = "保险业务收入"
+        columnComments["out_prem"] = "减:分出保费"
+        columnComments["une_prem_reser"] = "提取未到期责任准备金"
+        columnComments["reins_income"] = "其中:分保费收入"
+        columnComments["n_sec_tb_income"] = "代理买卖证券业务净收入"
+        columnComments["n_sec_uw_income"] = "证券承销业务净收入"
+        columnComments["n_asset_mg_income"] = "受托客户资产管理业务净收入"
+        columnComments["oth_b_income"] = "其他业务收入"
+        columnComments["fv_value_chg_gain"] = "加:公允价值变动净收益"
+        columnComments["invest_income"] = "加:投资净收益"
+        columnComments["ass_invest_income"] = "其中:对联营企业和合营企业的投资收益"
+        columnComments["forex_gain"] = "加:汇兑净收益"
+        columnComments["total_cogs"] = "营业总成本"
+        columnComments["oper_cost"] = "减:营业成本"
+        columnComments["int_exp"] = "减:利息支出"
+        columnComments["comm_exp"] = "减:手续费及佣金支出"
+        columnComments["biz_tax_surchg"] = "减:营业税金及附加"
+        columnComments["sell_exp"] = "减:销售费用"
+        columnComments["admin_exp"] = "减:管理费用"
+        columnComments["fin_exp"] = "减:财务费用"
+        columnComments["assets_impair_loss"] = "减:资产减值损失"
+        columnComments["prem_refund"] = "退保金"
+        columnComments["compens_payout"] = "赔付总支出"
+        columnComments["reser_insur_liab"] = "提取保险责任准备金"
+        columnComments["div_payt"] = "保户红利支出"
+        columnComments["reins_exp"] = "分保费用"
+        columnComments["oper_exp"] = "营业支出"
+        columnComments["compens_payout_refu"] = "减:摊回赔付支出"
+        columnComments["insur_reser_refu"] = "减:摊回保险责任准备金"
+        columnComments["reins_cost_refund"] = "减:摊回分保费用"
+        columnComments["other_bus_cost"] = "其他业务成本"
+        columnComments["operate_profit"] = "营业利润"
+        columnComments["non_oper_income"] = "加:营业外收入"
+        columnComments["non_oper_exp"] = "减:营业外支出"
+        columnComments["nca_disploss"] = "其中:减:非流动资产处置净损失"
+        columnComments["total_profit"] = "利润总额"
+        columnComments["income_tax"] = "所得税费用"
+        columnComments["n_income"] = "净利润(含少数股东损益)"
+        columnComments["n_income_attr_p"] = "净利润(不含少数股东损益)"
+        columnComments["minority_gain"] = "少数股东损益"
+        columnComments["oth_compr_income"] = "其他综合收益"
+        columnComments["t_compr_income"] = "综合收益总额"
+        columnComments["compr_inc_attr_p"] = "归属于母公司(或股东)的综合收益总额"
+        columnComments["compr_inc_attr_m_s"] = "归属于少数股东的综合收益总额"
+        columnComments["ebit"] = "息税前利润"
+        columnComments["ebitda"] = "息税折旧摊销前利润"
+        columnComments["insurance_exp"] = "保险业务支出"
+        columnComments["undist_profit"] = "年初未分配利润"
+        columnComments["distable_profit"] = "可分配利润"
+        columnComments["rd_exp"] = "研发费用"
+        columnComments["fin_exp_int_exp"] = "财务费用:利息费用"
+        columnComments["fin_exp_int_inc"] = "财务费用:利息收入"
+        columnComments["transfer_surplus_rese"] = "盈余公积转入"
+        columnComments["transfer_housing_imprest"] = "住房周转金转入"
+        columnComments["transfer_oth"] = "其他转入"
+        columnComments["adj_lossgain"] = "调整以前年度损益"
+        columnComments["withdra_legal_surplus"] = "提取法定盈余公积"
+        columnComments["withdra_legal_pubfund"] = "提取法定公益金"
+        columnComments["withdra_biz_devfund"] = "提取企业发展基金"
+        columnComments["withdra_rese_fund"] = "提取储备基金"
+        columnComments["withdra_oth_ersu"] = "提取任意盈余公积金"
+        columnComments["workers_welfare"] = "职工奖金福利"
+        columnComments["distr_profit_shrhder"] = "可供股东分配的利润"
+        columnComments["prfshare_payable_dvd"] = "应付优先股股利"
+        columnComments["comshare_payable_dvd"] = "应付普通股股利"
+        columnComments["capit_comstock_div"] = "转作股本的普通股股利"
+        columnComments["continued_net_profit"] = "持续经营净利润"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createStockBalancesheet(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_balancesheet"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as total_share,
+            array(DOUBLE, 0) as cap_rese,
+            array(DOUBLE, 0) as undistr_porfit,
+            array(DOUBLE, 0) as surplus_rese,
+            array(DOUBLE, 0) as special_rese,
+            array(DOUBLE, 0) as money_cap,
+            array(DOUBLE, 0) as trad_asset,
+            array(DOUBLE, 0) as notes_receiv,
+            array(DOUBLE, 0) as accounts_receiv,
+            array(DOUBLE, 0) as oth_receiv,
+            array(DOUBLE, 0) as prepayment,
+            array(DOUBLE, 0) as div_receiv,
+            array(DOUBLE, 0) as int_receiv,
+            array(DOUBLE, 0) as inventories,
+            array(DOUBLE, 0) as amor_exp,
+            array(DOUBLE, 0) as nca_within_1y,
+            array(DOUBLE, 0) as sett_rsrv,
+            array(DOUBLE, 0) as loanto_oth_bank_fi,
+            array(DOUBLE, 0) as premium_receiv,
+            array(DOUBLE, 0) as reinsur_receiv,
+            array(DOUBLE, 0) as reinsur_res_receiv,
+            array(DOUBLE, 0) as pur_resale_fa,
+            array(DOUBLE, 0) as oth_cur_assets,
+            array(DOUBLE, 0) as total_cur_assets,
+            array(DOUBLE, 0) as fa_avail_for_sale,
+            array(DOUBLE, 0) as htm_invest,
+            array(DOUBLE, 0) as lt_eqt_invest,
+            array(DOUBLE, 0) as invest_real_estate,
+            array(DOUBLE, 0) as time_deposits,
+            array(DOUBLE, 0) as oth_assets,
+            array(DOUBLE, 0) as lt_rec,
+            array(DOUBLE, 0) as fix_assets,
+            array(DOUBLE, 0) as cip,
+            array(DOUBLE, 0) as const_materials,
+            array(DOUBLE, 0) as fixed_assets_disp,
+            array(DOUBLE, 0) as produc_bio_assets,
+            array(DOUBLE, 0) as oil_and_gas_assets,
+            array(DOUBLE, 0) as intan_assets,
+            array(DOUBLE, 0) as r_and_d,
+            array(DOUBLE, 0) as goodwill,
+            array(DOUBLE, 0) as lt_amor_exp,
+            array(DOUBLE, 0) as defer_tax_assets,
+            array(DOUBLE, 0) as decr_in_disbur,
+            array(DOUBLE, 0) as oth_nca,
+            array(DOUBLE, 0) as total_nca,
+            array(DOUBLE, 0) as cash_reser_cb,
+            array(DOUBLE, 0) as depos_in_oth_bfi,
+            array(DOUBLE, 0) as prec_metals,
+            array(DOUBLE, 0) as deriv_assets,
+            array(DOUBLE, 0) as rr_reins_une_prem,
+            array(DOUBLE, 0) as rr_reins_outstd_cla,
+            array(DOUBLE, 0) as rr_reins_lins_liab,
+            array(DOUBLE, 0) as rr_reins_lthins_liab,
+            array(DOUBLE, 0) as refund_depos,
+            array(DOUBLE, 0) as ph_pledge_loans,
+            array(DOUBLE, 0) as refund_cap_depos,
+            array(DOUBLE, 0) as indep_acct_assets,
+            array(DOUBLE, 0) as client_depos,
+            array(DOUBLE, 0) as client_prov,
+            array(DOUBLE, 0) as transac_seat_fee,
+            array(DOUBLE, 0) as invest_as_receiv,
+            array(DOUBLE, 0) as total_assets,
+            array(DOUBLE, 0) as lt_borr,
+            array(DOUBLE, 0) as st_borr,
+            array(DOUBLE, 0) as cb_borr,
+            array(DOUBLE, 0) as depos_ib_deposits,
+            array(DOUBLE, 0) as loan_oth_bank,
+            array(DOUBLE, 0) as trading_fl,
+            array(DOUBLE, 0) as notes_payable,
+            array(DOUBLE, 0) as acct_payable,
+            array(DOUBLE, 0) as adv_receipts,
+            array(DOUBLE, 0) as sold_for_repur_fa,
+            array(DOUBLE, 0) as comm_payable,
+            array(DOUBLE, 0) as payroll_payable,
+            array(DOUBLE, 0) as taxes_payable,
+            array(DOUBLE, 0) as int_payable,
+            array(DOUBLE, 0) as div_payable,
+            array(DOUBLE, 0) as oth_payable,
+            array(DOUBLE, 0) as acc_exp,
+            array(DOUBLE, 0) as deferred_inc,
+            array(DOUBLE, 0) as st_bonds_payable,
+            array(DOUBLE, 0) as payable_to_reinsurer,
+            array(DOUBLE, 0) as rsrv_insur_cont,
+            array(DOUBLE, 0) as acting_trading_sec,
+            array(DOUBLE, 0) as acting_uw_sec,
+            array(DOUBLE, 0) as non_cur_liab_due_1y,
+            array(DOUBLE, 0) as oth_cur_liab,
+            array(DOUBLE, 0) as total_cur_liab,
+            array(DOUBLE, 0) as bond_payable,
+            array(DOUBLE, 0) as lt_payable,
+            array(DOUBLE, 0) as specific_payables,
+            array(DOUBLE, 0) as estimated_liab,
+            array(DOUBLE, 0) as defer_tax_liab,
+            array(DOUBLE, 0) as defer_inc_non_cur_liab,
+            array(DOUBLE, 0) as oth_ncl,
+            array(DOUBLE, 0) as total_ncl,
+            array(DOUBLE, 0) as depos_oth_bfi,
+            array(DOUBLE, 0) as deriv_liab,
+            array(DOUBLE, 0) as depos,
+            array(DOUBLE, 0) as agency_bus_liab,
+            array(DOUBLE, 0) as oth_liab,
+            array(DOUBLE, 0) as prem_receiv_adva,
+            array(DOUBLE, 0) as depos_received,
+            array(DOUBLE, 0) as ph_invest,
+            array(DOUBLE, 0) as reser_une_prem,
+            array(DOUBLE, 0) as reser_outstd_claims,
+            array(DOUBLE, 0) as reser_lins_liab,
+            array(DOUBLE, 0) as reser_lthins_liab,
+            array(DOUBLE, 0) as indept_acc_liab,
+            array(DOUBLE, 0) as pledge_borr,
+            array(DOUBLE, 0) as indem_payable,
+            array(DOUBLE, 0) as policy_div_payable,
+            array(DOUBLE, 0) as total_liab,
+            array(DOUBLE, 0) as treasury_share,
+            array(DOUBLE, 0) as ordin_risk_reser,
+            array(DOUBLE, 0) as forex_differ,
+            array(DOUBLE, 0) as invest_loss_unconf,
+            array(DOUBLE, 0) as minority_int,
+            array(DOUBLE, 0) as total_hldr_eqy_exc_min_int,
+            array(DOUBLE, 0) as total_hldr_eqy_inc_min_int,
+            array(DOUBLE, 0) as total_liab_hldr_eqy,
+            array(DOUBLE, 0) as lt_payroll_payable,
+            array(DOUBLE, 0) as oth_comp_income,
+            array(DOUBLE, 0) as oth_eqt_tools,
+            array(DOUBLE, 0) as oth_eqt_tools_p_shr,
+            array(DOUBLE, 0) as lending_funds,
+            array(DOUBLE, 0) as acc_receivable,
+            array(DOUBLE, 0) as st_fin_payable,
+            array(DOUBLE, 0) as payables,
+            array(DOUBLE, 0) as hfs_assets,
+            array(DOUBLE, 0) as hfs_sales,
+            array(DOUBLE, 0) as cost_fin_assets,
+            array(DOUBLE, 0) as fair_value_fin_assets,
+            array(DOUBLE, 0) as contract_assets,
+            array(DOUBLE, 0) as contract_liab,
+            array(DOUBLE, 0) as accounts_receiv_bill,
+            array(DOUBLE, 0) as accounts_pay,
+            array(DOUBLE, 0) as oth_rcv_total,
+            array(DOUBLE, 0) as fix_assets_total,
+            array(DOUBLE, 0) as cip_total,
+            array(DOUBLE, 0) as oth_pay_total,
+            array(DOUBLE, 0) as long_pay_total,
+            array(DOUBLE, 0) as debt_invest,
+            array(DOUBLE, 0) as oth_debt_invest,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["report_type"] = "报表类型"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["total_share"] = "期末总股本"
+        columnComments["cap_rese"] = "资本公积金"
+        columnComments["undistr_porfit"] = "未分配利润"
+        columnComments["surplus_rese"] = "盈余公积金"
+        columnComments["special_rese"] = "专项储备"
+        columnComments["money_cap"] = "货币资金"
+        columnComments["trad_asset"] = "交易性金融资产"
+        columnComments["notes_receiv"] = "应收票据"
+        columnComments["accounts_receiv"] = "应收账款"
+        columnComments["oth_receiv"] = "其他应收款"
+        columnComments["prepayment"] = "预付款项"
+        columnComments["div_receiv"] = "应收股利"
+        columnComments["int_receiv"] = "应收利息"
+        columnComments["inventories"] = "存货"
+        columnComments["amor_exp"] = "待摊费用"
+        columnComments["nca_within_1y"] = "一年内到期的非流动资产"
+        columnComments["sett_rsrv"] = "结算备付金"
+        columnComments["loanto_oth_bank_fi"] = "拆出资金"
+        columnComments["premium_receiv"] = "应收保费"
+        columnComments["reinsur_receiv"] = "应收分保账款"
+        columnComments["reinsur_res_receiv"] = "应收分保合同准备金"
+        columnComments["pur_resale_fa"] = "买入返售金融资产"
+        columnComments["oth_cur_assets"] = "其他流动资产"
+        columnComments["total_cur_assets"] = "流动资产合计"
+        columnComments["fa_avail_for_sale"] = "可供出售金融资产"
+        columnComments["htm_invest"] = "持有至到期投资"
+        columnComments["lt_eqt_invest"] = "长期股权投资"
+        columnComments["invest_real_estate"] = "投资性房地产"
+        columnComments["time_deposits"] = "定期存款"
+        columnComments["oth_assets"] = "其他资产"
+        columnComments["lt_rec"] = "长期应收款"
+        columnComments["fix_assets"] = "固定资产"
+        columnComments["cip"] = "在建工程"
+        columnComments["const_materials"] = "工程物资"
+        columnComments["fixed_assets_disp"] = "固定资产清理"
+        columnComments["produc_bio_assets"] = "生产性生物资产"
+        columnComments["oil_and_gas_assets"] = "油气资产"
+        columnComments["intan_assets"] = "无形资产"
+        columnComments["r_and_d"] = "研发支出"
+        columnComments["goodwill"] = "商誉"
+        columnComments["lt_amor_exp"] = "长期待摊费用"
+        columnComments["defer_tax_assets"] = "递延所得税资产"
+        columnComments["decr_in_disbur"] = "发放贷款及垫款"
+        columnComments["oth_nca"] = "其他非流动资产"
+        columnComments["total_nca"] = "非流动资产合计"
+        columnComments["cash_reser_cb"] = "现金及存放中央银行款项"
+        columnComments["depos_in_oth_bfi"] = "存放同业和其它金融机构款项"
+        columnComments["prec_metals"] = "贵金属"
+        columnComments["deriv_assets"] = "衍生金融资产"
+        columnComments["rr_reins_une_prem"] = "应收分保未到期责任准备金"
+        columnComments["rr_reins_outstd_cla"] = "应收分保未决赔款准备金"
+        columnComments["rr_reins_lins_liab"] = "应收分保寿险责任准备金"
+        columnComments["rr_reins_lthins_liab"] = "应收分保长期健康险责任准备金"
+        columnComments["refund_depos"] = "存出保证金"
+        columnComments["ph_pledge_loans"] = "保户质押贷款"
+        columnComments["refund_cap_depos"] = "存出资本保证金"
+        columnComments["indep_acct_assets"] = "独立账户资产"
+        columnComments["client_depos"] = "其中：客户资金存款"
+        columnComments["client_prov"] = "其中：客户备付金"
+        columnComments["transac_seat_fee"] = "其中:交易席位费"
+        columnComments["invest_as_receiv"] = "应收款项类投资"
+        columnComments["total_assets"] = "资产总计"
+        columnComments["lt_borr"] = "长期借款"
+        columnComments["st_borr"] = "短期借款"
+        columnComments["cb_borr"] = "向中央银行借款"
+        columnComments["depos_ib_deposits"] = "吸收存款及同业存放"
+        columnComments["loan_oth_bank"] = "拆入资金"
+        columnComments["trading_fl"] = "交易性金融负债"
+        columnComments["notes_payable"] = "应付票据"
+        columnComments["acct_payable"] = "应付账款"
+        columnComments["adv_receipts"] = "预收款项"
+        columnComments["sold_for_repur_fa"] = "卖出回购金融资产款"
+        columnComments["comm_payable"] = "应付手续费及佣金"
+        columnComments["payroll_payable"] = "应付职工薪酬"
+        columnComments["taxes_payable"] = "应交税费"
+        columnComments["int_payable"] = "应付利息"
+        columnComments["div_payable"] = "应付股利"
+        columnComments["oth_payable"] = "其他应付款"
+        columnComments["acc_exp"] = "预提费用"
+        columnComments["deferred_inc"] = "递延收益"
+        columnComments["st_bonds_payable"] = "应付短期债券"
+        columnComments["payable_to_reinsurer"] = "应付分保账款"
+        columnComments["rsrv_insur_cont"] = "保险合同准备金"
+        columnComments["acting_trading_sec"] = "代理买卖证券款"
+        columnComments["acting_uw_sec"] = "代理承销证券款"
+        columnComments["non_cur_liab_due_1y"] = "一年内到期的非流动负债"
+        columnComments["oth_cur_liab"] = "其他流动负债"
+        columnComments["total_cur_liab"] = "流动负债合计"
+        columnComments["bond_payable"] = "应付债券"
+        columnComments["lt_payable"] = "长期应付款"
+        columnComments["specific_payables"] = "专项应付款"
+        columnComments["estimated_liab"] = "预计负债"
+        columnComments["defer_tax_liab"] = "递延所得税负债"
+        columnComments["defer_inc_non_cur_liab"] = "递延收益-非流动负债"
+        columnComments["oth_ncl"] = "其他非流动负债"
+        columnComments["total_ncl"] = "非流动负债合计"
+        columnComments["depos_oth_bfi"] = "同业和其它金融机构存放款项"
+        columnComments["deriv_liab"] = "衍生金融负债"
+        columnComments["depos"] = "吸收存款"
+        columnComments["agency_bus_liab"] = "代理业务负债"
+        columnComments["oth_liab"] = "其他负债"
+        columnComments["prem_receiv_adva"] = "预收保费"
+        columnComments["depos_received"] = "存入保证金"
+        columnComments["ph_invest"] = "保户储金及投资款"
+        columnComments["reser_une_prem"] = "未到期责任准备金"
+        columnComments["reser_outstd_claims"] = "未决赔款准备金"
+        columnComments["reser_lins_liab"] = "寿险责任准备金"
+        columnComments["reser_lthins_liab"] = "长期健康险责任准备金"
+        columnComments["indept_acc_liab"] = "独立账户负债"
+        columnComments["pledge_borr"] = "其中:质押借款"
+        columnComments["indem_payable"] = "应付赔付款"
+        columnComments["policy_div_payable"] = "应付保单红利"
+        columnComments["total_liab"] = "负债合计"
+        columnComments["treasury_share"] = "减:库存股"
+        columnComments["ordin_risk_reser"] = "一般风险准备"
+        columnComments["forex_differ"] = "外币报表折算差额"
+        columnComments["invest_loss_unconf"] = "未确认的投资损失"
+        columnComments["minority_int"] = "少数股东权益"
+        columnComments["total_hldr_eqy_exc_min_int"] = "股东权益合计(不含少数股东权益)"
+        columnComments["total_hldr_eqy_inc_min_int"] = "股东权益合计(含少数股东权益)"
+        columnComments["total_liab_hldr_eqy"] = "负债及股东权益总计"
+        columnComments["lt_payroll_payable"] = "长期应付职工薪酬"
+        columnComments["oth_comp_income"] = "其他综合收益"
+        columnComments["oth_eqt_tools"] = "其他权益工具"
+        columnComments["oth_eqt_tools_p_shr"] = "其他权益工具(优先股)"
+        columnComments["lending_funds"] = "融出资金"
+        columnComments["acc_receivable"] = "应收款项"
+        columnComments["st_fin_payable"] = "应付短期融资款"
+        columnComments["payables"] = "应付款项"
+        columnComments["hfs_assets"] = "持有待售的资产"
+        columnComments["hfs_sales"] = "持有待售的负债"
+        columnComments["cost_fin_assets"] = "以摊余成本计量的金融资产"
+        columnComments["fair_value_fin_assets"] = "以公允价值计量且其变动计入其他综合收益的金融资产"
+        columnComments["contract_assets"] = "合同资产"
+        columnComments["contract_liab"] = "合同负债"
+        columnComments["accounts_receiv_bill"] = "应收票据及应收账款"
+        columnComments["accounts_pay"] = "应付票据及应付账款"
+        columnComments["oth_rcv_total"] = "其他应收款(合计)（元）"
+        columnComments["fix_assets_total"] = "固定资产(合计)(元)"
+        columnComments["cip_total"] = "在建工程(合计)(元)"
+        columnComments["oth_pay_total"] = "其他应付款(合计)(元)"
+        columnComments["long_pay_total"] = "长期应付款(合计)(元)"
+        columnComments["debt_invest"] = "债权投资(元)"
+        columnComments["oth_debt_invest"] = "其他债权投资(元)"
+        columnComments["update_flag"] = "更新标识"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+
+def createStockCashflow(){
+    dbName = "dfs://day_factor"
+    tbName = "stock_cashflow"
+    if(!existsDatabase(dbName)){
+        EasyTushareLog("Database of " + dbName + " does not exist, please create database first!")
+    }
+    else{
+        db = database(dbName)
+        schemaTB = table(
+            array(SYMBOL, 0) as ts_code,
+            array(DATE, 0) as ann_date,
+            array(DATE, 0) as f_ann_date,
+            array(DATE, 0) as end_date,
+            array(SYMBOL, 0) as comp_type,
+            array(SYMBOL, 0) as report_type,
+            array(SYMBOL, 0) as end_type,
+            array(DOUBLE, 0) as net_profit,
+            array(DOUBLE, 0) as finan_exp,
+            array(DOUBLE, 0) as c_fr_sale_sg,
+            array(DOUBLE, 0) as recp_tax_rends,
+            array(DOUBLE, 0) as n_depos_incr_fi,
+            array(DOUBLE, 0) as n_incr_loans_cb,
+            array(DOUBLE, 0) as n_inc_borr_oth_fi,
+            array(DOUBLE, 0) as prem_fr_orig_contr,
+            array(DOUBLE, 0) as n_incr_insured_dep,
+            array(DOUBLE, 0) as n_reinsur_prem,
+            array(DOUBLE, 0) as n_incr_disp_tfa,
+            array(DOUBLE, 0) as ifc_cash_incr,
+            array(DOUBLE, 0) as n_incr_disp_faas,
+            array(DOUBLE, 0) as n_incr_loans_oth_bank,
+            array(DOUBLE, 0) as n_cap_incr_repur,
+            array(DOUBLE, 0) as c_fr_oth_operate_a,
+            array(DOUBLE, 0) as c_inf_fr_operate_a,
+            array(DOUBLE, 0) as c_paid_goods_s,
+            array(DOUBLE, 0) as c_paid_to_for_empl,
+            array(DOUBLE, 0) as c_paid_for_taxes,
+            array(DOUBLE, 0) as n_incr_clt_loan_adv,
+            array(DOUBLE, 0) as n_incr_dep_cbob,
+            array(DOUBLE, 0) as c_pay_claims_orig_inco,
+            array(DOUBLE, 0) as pay_handling_chrg,
+            array(DOUBLE, 0) as pay_comm_insur_plcy,
+            array(DOUBLE, 0) as oth_cash_pay_oper_act,
+            array(DOUBLE, 0) as st_cash_out_act,
+            array(DOUBLE, 0) as n_cashflow_act,
+            array(DOUBLE, 0) as oth_recp_ral_inv_act,
+            array(DOUBLE, 0) as c_disp_withdrwl_invest,
+            array(DOUBLE, 0) as c_recp_return_invest,
+            array(DOUBLE, 0) as n_recp_disp_fiolta,
+            array(DOUBLE, 0) as n_recp_disp_sobu,
+            array(DOUBLE, 0) as stot_inflows_inv_act,
+            array(DOUBLE, 0) as c_pay_acq_const_fiolta,
+            array(DOUBLE, 0) as c_paid_invest,
+            array(DOUBLE, 0) as n_disp_subs_oth_biz,
+            array(DOUBLE, 0) as oth_pay_ral_inv_act,
+            array(DOUBLE, 0) as n_incr_pledge_loan,
+            array(DOUBLE, 0) as stot_out_inv_act,
+            array(DOUBLE, 0) as n_cashflow_inv_act,
+            array(DOUBLE, 0) as c_recp_borrow,
+            array(DOUBLE, 0) as proc_issue_bonds,
+            array(DOUBLE, 0) as oth_cash_recp_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cash_in_fnc_act,
+            array(DOUBLE, 0) as free_cashflow,
+            array(DOUBLE, 0) as c_prepay_amt_borr,
+            array(DOUBLE, 0) as c_pay_dist_dpcp_int_exp,
+            array(DOUBLE, 0) as incl_dvd_profit_paid_sc_ms,
+            array(DOUBLE, 0) as oth_cashpay_ral_fnc_act,
+            array(DOUBLE, 0) as stot_cashout_fnc_act,
+            array(DOUBLE, 0) as n_cash_flows_fnc_act,
+            array(DOUBLE, 0) as eff_fx_flu_cash,
+            array(DOUBLE, 0) as n_incr_cash_cash_equ,
+            array(DOUBLE, 0) as c_cash_equ_beg_period,
+            array(DOUBLE, 0) as c_cash_equ_end_period,
+            array(DOUBLE, 0) as c_recp_cap_contrib,
+            array(DOUBLE, 0) as incl_cash_rec_saims,
+            array(DOUBLE, 0) as uncon_invest_loss,
+            array(DOUBLE, 0) as prov_depr_assets,
+            array(DOUBLE, 0) as depr_fa_coga_dpba,
+            array(DOUBLE, 0) as amort_intang_assets,
+            array(DOUBLE, 0) as lt_amort_deferred_exp,
+            array(DOUBLE, 0) as decr_deferred_exp,
+            array(DOUBLE, 0) as incr_acc_exp,
+            array(DOUBLE, 0) as loss_disp_fiolta,
+            array(DOUBLE, 0) as loss_scr_fa,
+            array(DOUBLE, 0) as loss_fv_chg,
+            array(DOUBLE, 0) as invest_loss,
+            array(DOUBLE, 0) as decr_def_inc_tax_assets,
+            array(DOUBLE, 0) as incr_def_inc_tax_liab,
+            array(DOUBLE, 0) as decr_inventories,
+            array(DOUBLE, 0) as decr_oper_payable,
+            array(DOUBLE, 0) as incr_oper_payable,
+            array(DOUBLE, 0) as others,
+            array(DOUBLE, 0) as im_net_cashflow_oper_act,
+            array(DOUBLE, 0) as conv_debt_into_cap,
+            array(DOUBLE, 0) as conv_copbonds_due_within_1y,
+            array(DOUBLE, 0) as fa_fnc_leases,
+            array(DOUBLE, 0) as im_n_incr_cash_equ,
+            array(DOUBLE, 0) as net_dism_capital_add,
+            array(DOUBLE, 0) as net_cash_rece_sec,
+            array(DOUBLE, 0) as credit_impa_loss,
+            array(DOUBLE, 0) as use_right_asset_dep,
+            array(DOUBLE, 0) as oth_loss_asset,
+            array(DOUBLE, 0) as end_bal_cash,
+            array(DOUBLE, 0) as beg_bal_cash,
+            array(DOUBLE, 0) as end_bal_cash_equ,
+            array(DOUBLE, 0) as beg_bal_cash_equ,
+            array(SYMBOL, 0) as update_flag,
+            array(TIMESTAMP, 0) as update_time
+        )
+        db.createPartitionedTable(
+            table = schemaTB,
+            tableName = tbName, 
+            partitionColumns=`ann_date,
+            sortColumns=`ts_code`ann_date,
+            keepDuplicates=LAST
+        )
+        go 
+        columnComments = dict(STRING, STRING)
+        columnComments["ts_code"] = "TS股票代码"
+        columnComments["ann_date"] = "公告日期"
+        columnComments["f_ann_date"] = "实际公告日期"
+        columnComments["end_date"] = "报告期"
+        columnComments["comp_type"] = "公司类型(1一般工商业2银行3保险4证券)"
+        columnComments["report_type"] = "报表类型"
+        columnComments["end_type"] = "报告期类型"
+        columnComments["net_profit"] = "净利润"
+        columnComments["finan_exp"] = "财务费用"
+        columnComments["c_fr_sale_sg"] = "销售商品、提供劳务收到的现金"
+        columnComments["recp_tax_rends"] = "收到的税费返还"
+        columnComments["n_depos_incr_fi"] = "客户存款和同业存放款项净增加额"
+        columnComments["n_incr_loans_cb"] = "向中央银行借款净增加额"
+        columnComments["n_inc_borr_oth_fi"] = "向其他金融机构拆入资金净增加额"
+        columnComments["prem_fr_orig_contr"] = "收到原保险合同保费取得的现金"
+        columnComments["n_incr_insured_dep"] = "保户储金净增加额"
+        columnComments["n_reinsur_prem"] = "收到再保业务现金净额"
+        columnComments["n_incr_disp_tfa"] = "处置交易性金融资产净增加额"
+        columnComments["ifc_cash_incr"] = "收取利息和手续费净增加额"
+        columnComments["n_incr_disp_faas"] = "处置可供出售金融资产净增加额"
+        columnComments["n_incr_loans_oth_bank"] = "拆入资金净增加额"
+        columnComments["n_cap_incr_repur"] = "回购业务资金净增加额"
+        columnComments["c_fr_oth_operate_a"] = "收到其他与经营活动有关的现金"
+        columnComments["c_inf_fr_operate_a"] = "经营活动现金流入小计"
+        columnComments["c_paid_goods_s"] = "购买商品、接受劳务支付的现金"
+        columnComments["c_paid_to_for_empl"] = "支付给职工以及为职工支付的现金"
+        columnComments["c_paid_for_taxes"] = "支付的各项税费"
+        columnComments["n_incr_clt_loan_adv"] = "客户贷款及垫款净增加额"
+        columnComments["n_incr_dep_cbob"] = "存放央行和同业款项净增加额"
+        columnComments["c_pay_claims_orig_inco"] = "支付原保险合同赔付款项的现金"
+        columnComments["pay_handling_chrg"] = "支付手续费的现金"
+        columnComments["pay_comm_insur_plcy"] = "支付保单红利的现金"
+        columnComments["oth_cash_pay_oper_act"] = "支付其他与经营活动有关的现金"
+        columnComments["st_cash_out_act"] = "经营活动现金流出小计"
+        columnComments["n_cashflow_act"] = "经营活动产生的现金流量净额"
+        columnComments["oth_recp_ral_inv_act"] = "收到其他与投资活动有关的现金"
+        columnComments["c_disp_withdrwl_invest"] = "收回投资收到的现金"
+        columnComments["c_recp_return_invest"] = "取得投资收益收到的现金"
+        columnComments["n_recp_disp_fiolta"] = "处置固定资产、无形资产和其他长期资产收回的现金净额"
+        columnComments["n_recp_disp_sobu"] = "处置子公司及其他营业单位收到的现金净额"
+        columnComments["stot_inflows_inv_act"] = "投资活动现金流入小计"
+        columnComments["c_pay_acq_const_fiolta"] = "购建固定资产、无形资产和其他长期资产支付的现金"
+        columnComments["c_paid_invest"] = "投资支付的现金"
+        columnComments["n_disp_subs_oth_biz"] = "取得子公司及其他营业单位支付的现金净额"
+        columnComments["oth_pay_ral_inv_act"] = "支付其他与投资活动有关的现金"
+        columnComments["n_incr_pledge_loan"] = "质押贷款净增加额"
+        columnComments["stot_out_inv_act"] = "投资活动现金流出小计"
+        columnComments["n_cashflow_inv_act"] = "投资活动产生的现金流量净额"
+        columnComments["c_recp_borrow"] = "取得借款收到的现金"
+        columnComments["proc_issue_bonds"] = "发行债券收到的现金"
+        columnComments["oth_cash_recp_ral_fnc_act"] = "收到其他与筹资活动有关的现金"
+        columnComments["stot_cash_in_fnc_act"] = "筹资活动现金流入小计"
+        columnComments["free_cashflow"] = "企业自由现金流量"
+        columnComments["c_prepay_amt_borr"] = "偿还债务支付的现金"
+        columnComments["c_pay_dist_dpcp_int_exp"] = "分配股利、利润或偿付利息支付的现金"
+        columnComments["incl_dvd_profit_paid_sc_ms"] = "其中:子公司支付给少数股东的股利、利润"
+        columnComments["oth_cashpay_ral_fnc_act"] = "支付其他与筹资活动有关的现金"
+        columnComments["stot_cashout_fnc_act"] = "筹资活动现金流出小计"
+        columnComments["n_cash_flows_fnc_act"] = "筹资活动产生的现金流量净额"
+        columnComments["eff_fx_flu_cash"] = "汇率变动对现金的影响"
+        columnComments["n_incr_cash_cash_equ"] = "现金及现金等价物净增加额"
+        columnComments["c_cash_equ_beg_period"] = "期初现金及现金等价物余额"
+        columnComments["c_cash_equ_end_period"] = "期末现金及现金等价物余额"
+        columnComments["c_recp_cap_contrib"] = "吸收投资收到的现金"
+        columnComments["incl_cash_rec_saims"] = "其中:子公司吸收少数股东投资收到的现金"
+        columnComments["uncon_invest_loss"] = "未确认投资损失"
+        columnComments["prov_depr_assets"] = "加:资产减值准备"
+        columnComments["depr_fa_coga_dpba"] = "固定资产折旧、油气资产折耗、生产性生物资产折旧"
+        columnComments["amort_intang_assets"] = "无形资产摊销"
+        columnComments["lt_amort_deferred_exp"] = "长期待摊费用摊销"
+        columnComments["decr_deferred_exp"] = "待摊费用减少"
+        columnComments["incr_acc_exp"] = "预提费用增加"
+        columnComments["loss_disp_fiolta"] = "处置固定、无形资产和其他长期资产的损失"
+        columnComments["loss_scr_fa"] = "固定资产报废损失"
+        columnComments["loss_fv_chg"] = "公允价值变动损失"
+        columnComments["invest_loss"] = "投资损失"
+        columnComments["decr_def_inc_tax_assets"] = "递延所得税资产减少"
+        columnComments["incr_def_inc_tax_liab"] = "递延所得税负债增加"
+        columnComments["decr_inventories"] = "存货的减少"
+        columnComments["decr_oper_payable"] = "经营性应收项目的减少"
+        columnComments["incr_oper_payable"] = "经营性应付项目的增加"
+        columnComments["others"] = "其他"
+        columnComments["im_net_cashflow_oper_act"] = "经营活动产生的现金流量净额(间接法)"
+        columnComments["conv_debt_into_cap"] = "债务转为资本"
+        columnComments["conv_copbonds_due_within_1y"] = "一年内到期的可转换公司债券"
+        columnComments["fa_fnc_leases"] = "融资租入固定资产"
+        columnComments["im_n_incr_cash_equ"] = "现金及现金等价物净增加额(间接法)"
+        columnComments["net_dism_capital_add"] = "拆出资金净增加额"
+        columnComments["net_cash_rece_sec"] = "代理买卖证券收到的现金净额(元)"
+        columnComments["credit_impa_loss"] = "信用减值损失"
+        columnComments["use_right_asset_dep"] = "使用权资产折旧"
+        columnComments["oth_loss_asset"] = "其他资产减值损失"
+        columnComments["end_bal_cash"] = "现金的期末余额"
+        columnComments["beg_bal_cash"] = "减:现金的期初余额"
+        columnComments["end_bal_cash_equ"] = "加:现金等价物的期末余额"
+        columnComments["beg_bal_cash_equ"] = "减:现金等价物的期初余额"
+        columnComments["update_flag"] = "更新标志(1最新）"
+        columnComments["update_time"] = "更新时间"
+        setColumnComment(loadTable(dbName,tbName), columnComments)
+        EasyTushareLog("Table of " + tbName + " created successfully!")
+    }
+}
+*/

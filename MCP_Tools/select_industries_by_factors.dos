@@ -1,0 +1,62 @@
+def select_industries_by_factors(selectCols, whereCondition, orderbyCols, ascOrder, resultsName){
+    /*
+    selectCols = ["ts_code", "industry", "trade_date", "net_buy_amount"]
+    whereCondition = "trade_date >= 2024.09.10 and trade_date <= 2024.09.30"
+    orderbyCols = ["net_buy_amount"]
+    ascOrder = [0]
+    resultsName= "top_industries_sept2024"
+    */
+    // 1.构建sql语句
+    sql1 = sql(select=sqlCol(selectCols), from=loadTable("dfs://day_factor", "moneyflow_ind_ths"), where=parseExpr(whereCondition), orderBy=parseExpr(orderbyCols), ascOrder=int(ascOrder), limit=10)
+    sqlResult = sql1.eval()
+
+    // 2. 会话管理 - 条件性共享内存表
+    if (trim(resultsName) != "") {
+        share(sqlResult, resultsName)
+    }
+    // 3. 返回结果
+    result = dict(STRING, ANY)
+    result["共享表名"] = resultsName
+    result["数据行数"] = size(sqlResult)
+    result["前十行数据"] = sqlResult[0:min(10, sqlResult.size())]
+    // 返回结果
+    return toStdJson(result)
+}
+
+description_select_industries_by_factors = '根据用户输入的指标和筛选条件进行板块行业选择。所用指标必须存在于moneyflow_ind_ths表中。
+
+参数说明：
+- selectCols: STRING[]，股票代码列表
+- whereCondition: STRING，筛选条件字符串，可以包含"trade_date"的日期范围条件，以及其他筛选条件，如"ts_code == 881101.TI and trade_date >= 2023.10.01 and trade_date <= 2023.12.31"
+- orderbyCols: STRING[]，排序列名列表，如["trade_date", "net_buy_amount"]
+- ascOrder: DOUBLE[]，排序方式列表，1表示升序，0表示降序， 与orderbyCols一一对应，如[0, 1]表示trade_date降序，net_buy_amount升序
+- resultName: STRING，共享内存表名，用于后续分析。
+
+返回：
+- 操作结果信息，包含共享表名（如果有）
+
+示例：
+
+// 查询近一个月资金流入最大的行业板块
+select_industries_by_factors(
+    ["ts_code", "industry", "trade_date", "net_buy_amount"],
+    "trade_date >= 2024.09.10 and trade_date <= 2024.09.30",
+    ["net_buy_amount"],
+    [0],
+    "top_industries_sept2024"
+)
+'
+
+if (`select_industries_by_factors in (exec name from listMCPTools())) {
+  updateMCPTool(`select_industries_by_factors, select_industries_by_factors, 
+                `selectCols`whereCondition`orderbyCols`ascOrder`resultsName, 
+                ["STRING[]", "STRING", "STRING[]", "DOUBLE[]", "STRING"], 
+                description_select_industries_by_factors)
+} else {
+  addMCPTool(`select_industries_by_factors, select_industries_by_factors, 
+                `selectCols`whereCondition`orderbyCols`ascOrder`resultsName, 
+                ["STRING[]", "STRING", "STRING[]", "DOUBLE[]", "STRING"], 
+                description_select_industries_by_factors)
+}
+
+publishMCPTools(`select_industries_by_factors)

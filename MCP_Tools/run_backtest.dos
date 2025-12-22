@@ -1,0 +1,921 @@
+// ==================== 回测函数 ====================
+
+/**
+ * 加载回测配置
+ * 
+ * @param backtestId: SYMBOL - 回测ID
+ * 
+ * @return DICT - 配置字典
+ *   {
+ *     backtest_settings: STRING - JSON字符串
+ *     selected_stocks: STRING - JSON字符串
+ *     strategy_rules: STRING - JSON字符串
+ *     position_rules: STRING - JSON字符串
+ *     rebalance_rules: STRING - JSON字符串
+ *     trade_rules: STRING - JSON字符串
+ *   }
+ */
+def loadBacktestConfig(backtestId) {
+    // backtestId = `BT_20251124_102246
+    //configTable = loadTable("dfs://config", "backtest_config")
+    configTable = loadTable("dfs://config", "backtest_config_test")
+    configRow = exec * from configTable where backtest_id = backtestId
+    if (configRow.size() == 0) {
+        throw "配置不存在: " + backtestId
+    }
+
+    return dict(
+        [`backtest_settings, `selected_stocks, `strategy_rules, 
+         `position_rules, `rebalance_rules, `trade_rules],
+        [configRow.backtest_settings[0], configRow.selected_stocks_table[0], 
+         configRow.strategy_rules[0], configRow.position_rules[0],
+         configRow.rebalance_rules[0], configRow.trade_rules[0]])
+
+}
+
+/**
+ * 判断是否调仓日
+ * 
+ * @param tradingDate: DATE - 当前交易日期
+ * @param lastRebalanceDate: DATE - 上次调仓日期(首次为NULL)
+ * @param rebalanceRules: DICT - 调仓规则
+ *   {
+ *     weekday: STRING - "Monday"/.../  "Friday"
+ *     holding_period: INT - 最小持有天数
+ *   }
+ * 
+ * @return BOOL - true表示需要调仓,false表示不调仓
+ */
+
+def checkRebalanceDay(tradingDate, lastRebalanceDate, rebalanceRules) {  
+
+    /*
+    tradingDate = 2024.01.09  // 周二
+    lastRebalanceDate = 2024.01.02
+    rebalanceRules = dict([`weekday, `holding_period], ["Tuesday", 5])
+    */
+
+    // 1. 首次调仓  
+    if (isNull(lastRebalanceDate)) {  
+        return true  
+    }  
+      
+    // 2. 检查最小持有天数  
+    holdingPeriod = rebalanceRules["holding_period"]  
+    tradingDays = getMarketCalendar("XSHG", lastRebalanceDate, tradingDate)  
+    daysSinceRebalance = size(tradingDays)
+
+    if (daysSinceRebalance < holdingPeriod + 1 or !(tradingDate in tradingDays)) {  
+        return false  
+    }  
+      
+    // 3. 检查星期几 - 简化版  
+    weekdayMap = dict(  
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],  
+        [0, 1, 2, 3, 4, 5, 6]  
+    )  
+
+    if (isNull(rebalanceRules["weekday"]) or rebalanceRules["weekday"] == "") {
+        return true  // 只要满足持有期就可以调仓，不限制星期几
+    }  
+    targetWeekdayNum = weekdayMap[rebalanceRules["weekday"]]  
+    currentWeekday = weekday(tradingDate, false)  // 使用 false 参数  
+      
+    return currentWeekday == targetWeekdayNum  
+}    
+
+
+
+def executeSQL(sqlScript, contextTable) {
+    return parseExpr(sqlScript).eval()
+}
+
+
+/**
+ * 多因子选股打分
+ * 
+ * @param tradingDate: DATE - 交易日期
+ * @param universeStocks: STRING[] - 股票池
+ * @param strategyRules: DICT - 策略规则
+ *   {
+ *     factors: STRING[] - 因子名称
+ *     weights: DOUBLE[] - 因子权重(正=越大越好,负=越小越好)
+ *   }
+ * @param positionRules: DICT - 仓位规则
+ *   {
+ *     max_stocks: INT - 最大持股数量
+ *     weight_method: STRING - "equal"/"score"/"market_cap"
+ *     max_single_position: DOUBLE - 单只最大仓位(0-1)
+ *     target_position_ratio: DOUBLE - 目标仓位比例(0-1)
+ *   }
+ * 
+ * @return TABLE - 股票分数表
+ *   列: ts_code, score, [market_cap] (weight_method为market_cap时包含此列)
+ */
+
+
+
+def calculateScores(fullfactorTable, tradingDate, universeStocks, strategyRules, positionRules) {
+    /*
+    tradingDate = 2024.01.05
+    universeStocks = ["000001.SZ", "000002.SZ", "000003.SZ", "000004.SZ", "000005.SZ"]
+    strategyRules = dict(
+        [`factors, `weights],
+        [["pb", "pe_ttm", "debt_to_assets", "roe"], 
+         [-1, 1, -1, 1]]
+    )
+    positionRules = dict(
+        [`max_stocks, `weight_method, `max_single_position, `target_position_ratio],
+        [10, "market_cap", 0.15, 0.95]
+    )
+    */
+    
+    // 1. 确定需要加载的因子列表
+    if (positionRules["weight_method"] == "market_cap") {
+        factors = strategyRules["factors"] <- ["circ_mv"]
+    } else {
+        factors = strategyRules["factors"]
+    }
+    
+    // 2. 加载因子数据并透视
+    factorTable = select * from fullfactorTable
+                  where tradetime = tradingDate
+    
+    // print("=====已完成因子数据加载======")
+    // 如果没有数据,返回空表
+    if (factorTable.size() == 0) {
+        if (positionRules["weight_method"] == "market_cap") {
+            return table(
+                array(SYMBOL, 0) as ts_code,
+                array(DOUBLE, 0) as score,
+                array(DOUBLE, 0) as market_cap
+            )
+        } else {
+            return table(
+                array(SYMBOL, 0) as ts_code,
+                array(DOUBLE, 0) as score
+            )
+        }
+    }
+    // print("=====开始计算股票分数======")
+    // 3. 获取策略因子和权重(不包括circ_mv,它只用于仓位分配)
+    strategyFactors = strategyRules["factors"]
+    strategyWeights = strategyRules["weights"]
+    
+    // 4. 构建标准化后的分数计算SQL
+    // 为每个因子生成标准化表达式: (factor - avg(factor)) / std(factor) * weight
+    scoreExprParts = array(STRING, 0)
+    
+    for (i in 0..(size(strategyFactors)-1)) {
+        factor = strategyFactors[i]
+        weight = strategyWeights[i]
+        
+        // 检查因子是否存在于表中
+        if (!(factor in factorTable.columnNames())) {
+            continue
+        }
+        
+        // 构建标准化表达式
+        if (weight < 0) {
+            // 负权重: 反转后标准化
+            expr = "iif(isNull(" + factor + "), 0, -(" + factor + " - avg(" + factor + ")) / nullIf(std(" + factor + "), 0) * " + string(abs(weight)) + ")"
+        } else {
+            // 正权重: 直接标准化
+            expr = "iif(isNull(" + factor + "), 0, (" + factor + " - avg(" + factor + ")) / nullIf(std(" + factor + "), 0) * " + string(weight) + ")"
+        }
+        
+        scoreExprParts.append!(expr)
+    }
+    
+    scoreExpr = concat(scoreExprParts, " + ")
+    
+    // 6. 构建最终查询
+    if (factorTable.size() == 1) {
+        // 只有一只股票时，直接给固定分数
+        if (positionRules["weight_method"] == "market_cap") {
+            result = select securityid as ts_code, 
+                            1.0 as score, 
+                            circ_mv as market_cap 
+                    from factorTable
+        } else {
+            result = select securityid as ts_code, 
+                            1.0 as score 
+                    from factorTable
+        }
+    } else {
+        // 多只股票时，按原逻辑计算
+        if (positionRules["weight_method"] == "market_cap") {
+            result = sql(select = (sqlColAlias(<securityid>, "ts_code"), 
+                            sqlColAlias(parseExpr(scoreExpr), "score"), 
+                            sqlColAlias(<circ_mv>, "market_cap")),
+                        from = factorTable,
+                        groupBy = sqlCol("tradetime"), groupFlag=0).eval()
+        } else {
+            result = sql(select = (sqlColAlias(<securityid>, "ts_code"), 
+                            sqlColAlias(parseExpr(scoreExpr), "score")),
+                        from = factorTable,
+                        groupBy = sqlCol("tradetime"), groupFlag=0).eval()
+        }
+    }
+
+    // 7. 执行查询
+    //result = executeSQL(sql, factorTable)
+    
+    // 8. 过滤掉分数为NULL或0的,以及market_cap为NULL的(如果需要)
+    if (positionRules["weight_method"] == "market_cap") {
+        result = select * from result 
+                 where not isNull(score) and score != 0 
+                 and not isNull(market_cap) and market_cap > 0
+    } else {
+        result = select * from result 
+                 where not isNull(score) and score != 0
+    }
+    
+    // 9. 按分数降序排序
+    result = select * from result order by score desc
+    
+    return result
+}
+
+
+/**
+ * 加载价格数据
+ * @param tradingDate: DATE
+ * @param stocks: STRING[]
+ * @return TABLE - 价格表
+ *   列: ts_code, price
+ */
+def loadPriceData(fullPriceTable, tradingDate, stocks){
+    res = select * from fullPriceTable where trade_date = tradingDate
+    return res
+}
+
+
+/**
+ * 计算目标仓位
+ * 开发者： jiarong zhang 
+ * 日期：2025.11.11
+ * 
+ * @param targetStocks: TABLE - 股票分数字典
+ *   {股票代码: 分数}
+ * @param cash: DOUBLE - 当前现金
+ * @param positionsTable: TABLE - 当前持仓表 (列: ts_code, qty)
+ * @param priceTable: TABLE - 价格表 (列: ts_code, price)
+ * @param positionRules: DICT - 仓位规则
+ *   {
+ *     max_stocks: INT - 最大持股数
+ *     weight_method: STRING - "equal"/"score"
+ *     max_single_position: DOUBLE - 单只最大仓位(0-1)
+ *     target_position_ratio: DOUBLE - 目标仓位比例(0-1)
+ *   }
+ * 
+ * @return TABLE - 目标持仓表
+ *   列: ts_code, target_qty
+ */
+def calcPositions(targetStocks, cash, positions, priceData, positionRules) {
+    /*
+    targetStocks = table(
+        ["000001.SZ", "000002.SZ", "000003.SZ", "000004.SZ", "000005.SZ"] as ts_code,
+        [0.85, 0.72, 0.68, 0.55, 0.45] as score
+    )
+
+    cash = 1000000.0
+
+    positions = table(
+        ["000001.SZ", "000006.SZ"] as ts_code,
+        [1000, 500] as qty
+    )
+
+    priceData = table(
+        ["000001.SZ", "000002.SZ", "000003.SZ", "000004.SZ", "000005.SZ", "000006.SZ"] as ts_code,
+        [10.5, 15.2, 8.8, 12.3, 20.1, 18.5] as price
+    )
+
+    positionRules = dict(
+        [`max_stocks, `weight_method, `max_single_position, `target_position_ratio],
+        [10, "equal", 0.15, 0.95]
+    )
+    */
+    stocksWithPrice = select ts_code, score, price 
+                      from targetStocks inner join priceData 
+                      on targetStocks.ts_code = priceData.ts_code
+
+    // 1. 选出分数最高的N只股票
+    maxStocks = positionRules["max_stocks"]
+    topStocks = select * from stocksWithPrice order by score desc limit maxStocks
+    
+    // 2. 计算当前持仓总市值
+    if (positions.size() > 0) {
+        positionValue = exec sum(qty * price) 
+                        from positions left join priceData on positions.ts_code = priceData.ts_code
+    } else {
+        positionValue = 0.0
+    }
+    
+    totalValue = cash + positionValue
+    
+    // 3. 计算目标投资金额
+    //targetCash = totalValue * positionRules["target_position_ratio"]
+    targetCash = totalValue * 0.95  //目前目标仓位比例固定为95%
+
+    // 4. 根据权重方法分配仓位
+    weightMethod = positionRules["weight_method"]
+    
+    if (weightMethod == "equal") {
+        // 等权重分配
+        numStocks = topStocks.size()
+        amountPerStock = targetCash / numStocks
+        
+        // 计算每只股票的目标股数
+        targetPositions = select ts_code, 
+                                 int(amountPerStock / price / 100) * 100 as target_qty
+                          from topStocks left join priceData 
+                          on topStocks.ts_code = priceData.ts_code
+        
+        // 检查单只仓位限制
+        //maxSinglePosition = positionRules["max_single_position"]
+        maxSinglePosition = 0.15  //目前单只股票最大仓位不得查过15%
+        targetPositions = select ts_code,
+                                 iif((target_qty * price / totalValue) > maxSinglePosition, 
+                                     int((totalValue * maxSinglePosition) / price / 100) * 100,
+                                     target_qty) as target_qty
+                          from targetPositions left join priceData
+                          on targetPositions.ts_code = priceData.ts_code
+        
+    } else if (weightMethod == "score") {
+        // 按分数加权分配
+        totalScore = exec sum(score) from topStocks
+        
+        targetPositions = select ts_code,
+                                 int((score / totalScore * targetCash) / price / 100) * 100 as target_qty
+                          from topStocks left join priceData
+                          on topStocks.ts_code = priceData.ts_code
+
+        // 检查单只仓位限制
+        //maxSinglePosition = positionRules["max_single_position"]
+        maxSinglePosition = 0.15  //目前单只股票最大仓位不得查过15%
+        targetPositions = select ts_code,
+                                 iif((target_qty * price / totalValue) > maxSinglePosition, 
+                                     int((totalValue * maxSinglePosition) / price / 100) * 100,
+                                     target_qty) as target_qty
+                          from targetPositions left join priceData
+                          on targetPositions.ts_code = priceData.ts_code
+    }
+    
+    // 5. 过滤掉目标股数为0的
+    targetPositions = select * from targetPositions where target_qty > 0
+    
+    return targetPositions   
+
+}
+
+/**
+ * 执行交易
+ * 
+ * 开发者： jiarong zhang 
+ * 日期：2025.11.11
+ * 
+ * @param targetSharesTable: TABLE - 目标持仓表 (列: ts_code, target_qty)
+ * @param positionsTable: TABLE - 当前持仓表 (列: ts_code, qty)
+ * @param cash: DOUBLE - 当前现金
+ * @param priceTable: TABLE - 价格表 (列: ts_code, price)
+ * @param tradeRules: DICT - 交易规则
+ *   {
+ *     commission_rate: DOUBLE - 统一手续费率(双向)
+ *   }
+ * @param backtestId: SYMBOL - 回测ID(用于记录)
+ * @param tradingDate: DATE - 交易日期(用于记录)
+ * 
+ * @return DICT - 交易结果
+ *   {
+ *     cash: DOUBLE - 新现金余额
+ *     positions: DICT - 新持仓 {股票代码: 股数}
+ *     trades: TABLE - 交易记录表
+ *   }
+ */
+
+def executeTrades(targetShares, positions, cash, priceData, tradeRules, tradingDate) {
+    print("========== 开始交易 " + string(tradingDate) + " ==========")
+    print("初始现金: " + string(cash))
+    newCash = cash
+    commissionRate = tradeRules["commission_rate"]
+    
+    // 创建交易记录表
+    trades = table(10:0, 
+        `trade_date`ts_code`side`quantity`price`amount,
+        [DATE, SYMBOL, SYMBOL, INT, DOUBLE, DOUBLE]
+    )
+    
+    // 1. 处理当前持仓和目标持仓
+    if (positions.size() > 0) {
+        currentPos = select ts_code, qty as current_qty, 0 as target_qty from positions
+    } else {
+        currentPos = table(
+            array(SYMBOL, 0) as ts_code,
+            array(INT, 0) as current_qty,
+            array(INT, 0) as target_qty
+        )
+    }
+    
+    if (targetShares.size() > 0) {
+        targetPos = select ts_code, 0 as current_qty, target_qty from targetShares
+    } else {
+        targetPos = table(
+            array(SYMBOL, 0) as ts_code,
+            array(INT, 0) as current_qty,
+            array(INT, 0) as target_qty
+        )
+    }
+    
+    // 2. 合并并计算交易数量
+    allPositions = unionAll(currentPos, targetPos)
+    allPositions = select ts_code, 
+                          max(current_qty) as current_qty, 
+                          max(target_qty) as target_qty
+                   from allPositions 
+                   group by ts_code
+
+    allPositions = select ts_code, current_qty, target_qty, price
+                   from allPositions left join priceData
+                   on allPositions.ts_code = priceData.ts_code
+
+    // *** 新增：过滤掉价格为 NULL 的记录 ***
+    allPositions = select * from allPositions where price is not null and price > 0
+    
+    // 如果过滤后没有数据，直接返回
+    if (allPositions.size() == 0) {
+        return dict([`cash, `positions, `trades], [newCash, positions, trades])
+    }    
+    
+    update allPositions set 
+        trade_qty = target_qty - current_qty,
+        side = iif(target_qty > current_qty, "buy", 
+               iif(target_qty < current_qty, "sell", ""))
+    
+    // 3. 先执行卖出（回笼资金）
+    sellOrders = select * from allPositions where side == "sell"
+    print("卖出订单数: " + string(sellOrders.size()))
+
+    for (row in sellOrders) {
+        sellQty = abs(row.trade_qty)
+        price = row.price
+        
+        // print("  处理卖出: ts_code=" + string(row.ts_code) + 
+        //     ", trade_qty=" + string(row.trade_qty) + 
+        //     ", sellQty=" + string(sellQty) + 
+        //     ", price=" + string(price))
+        
+        // // 检查关键变量是否为 NULL
+        // if (isNull(sellQty)) {
+        //     print("    !!! 错误: sellQty 为 NULL")
+        //     continue
+        // }
+        // if (isNull(price)) {
+        //     print("    !!! 错误: price 为 NULL")
+
+        //     continue
+        // }
+        // if (isNull(commissionRate)) {
+        //     print("    !!! 错误: commissionRate 为 NULL")
+        //     continue
+        // }
+
+        grossProceeds = sellQty * price
+        netProceeds = grossProceeds * (1 - commissionRate)
+        
+        newCash += netProceeds
+        
+        // 更新当前持仓：卖出后减少
+        update allPositions set current_qty = current_qty - sellQty 
+        where ts_code == row.ts_code
+        
+        trades.append!(table(
+            [tradingDate] as trade_date,
+            [row.ts_code] as ts_code,
+            ["sell"] as side,
+            [sellQty] as quantity,
+            [price] as price,
+            [netProceeds] as amount
+        ))
+    }
+    print("卖出后现金: " + string(newCash))
+
+    // 4. 检查买入所需资金
+    buyOrders = select * from allPositions where side == "buy"
+    
+    print("买入订单数: " + string(buyOrders.size()))
+
+    if (buyOrders.size() > 0) {
+
+        // 计算总买入成本
+        totalBuyCost = exec sum(trade_qty * price * (1 + commissionRate)) from buyOrders
+
+        // 如果现金不够，按0.9倍缩减所有买入数量
+        if (totalBuyCost > newCash) {
+            scaleFactor = 0.9 * newCash / totalBuyCost
+            
+            // 更新买入订单数量（向下取整到100股）
+            update buyOrders set 
+                trade_qty = int(trade_qty * scaleFactor / 100) * 100
+            
+            // 过滤掉数量为0的订单
+            buyOrders = select * from buyOrders where trade_qty > 0
+        }
+        
+        // 5. 执行买入
+        for (row in buyOrders) {
+            buyQty = row.trade_qty
+            price = row.price
+            
+            grossCost = buyQty * price
+            netCost = grossCost * (1 + commissionRate)
+            
+            newCash -= netCost
+            
+            // 更新当前持仓：买入后增加
+            update allPositions set current_qty = current_qty + buyQty 
+            where ts_code == row.ts_code
+            
+            trades.append!(table(
+                [tradingDate] as trade_date,
+                [row.ts_code] as ts_code,
+                ["buy"] as side,
+                [buyQty] as quantity,
+                [price] as price,
+                [netCost] as amount
+            ))
+        }
+    }
+    print("买入后现金: " + string(newCash))
+    
+    // 6. 构建新持仓表（使用实际成交后的current_qty）
+    newPositions = select ts_code, current_qty as qty 
+                   from allPositions 
+                   where current_qty > 0
+    
+    return dict([`cash, `positions, `trades], [newCash, newPositions, trades])
+}
+
+
+
+
+
+/**
+ * 从交易记录计算组合指标
+ * @param tradeRecords: TABLE - 交易记录表(run_backtest的返回值)
+ * @param settings: DICT - 组合基础设定，包括初始资金、基准指数等
+ * @return DICT - 组合指标字典
+ *   nav(净值), cash(现金), position_value(持仓市值), holdings_count(持仓数), turnover_rate(换手率),
+ *   total_return(总收益率), annualized_return(年化收益率), max_drawdown(最大回撤), sharpe_ratio(夏普比率),
+ *   benchmark_return(基准收益率), alpha(阿尔法), beta(贝塔), csv_link(结果导出链接)
+ */
+def calculatePerformance(fullPriceTable, tradeRecords, settings){
+    // settings = {"benchmark":"000852.SH"}
+    // tradeRecords = allTrades
+    // fullPriceTable = fullpriceTable
+    print("=====开始计算组合指标======")
+    print(settings["benchmark"])
+    //print(tradeRecords)
+    print(settings)
+    initialCapital = settings["initial_capital"]
+    benchmarkIndex = iif(isNull(settings["benchmark"]), "000300.SH",settings["benchmark"])
+    startDate = settings["start_date"]
+    endDate = settings["end_date"]
+    // 获取所有交易日
+    tradingDates = exec distinct trade_date from tradeRecords order by trade_date
+    
+    portfolioTable = table(10000:0, 
+        `trade_date`cash`position_value`total_value`daily_return`cumulative_return`drawdown`holdings_count,
+        [DATE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, INT]
+    )
+
+    peakValue = initialCapital
+    ts_code = exec distinct ts_code from tradeRecords
+    position = take(0, size(ts_code))
+    LastPrice = take(0.0, size(ts_code))
+    cost = take(0.0,size(ts_code))
+    posTB = table(ts_code, position, LastPrice, cost)
+    
+    allPosition = table(10000:0, 
+        `trade_date`ts_code`Position`Price`Value`Cash,
+        [DATE, SYMBOL, INT, DOUBLE, DOUBLE, DOUBLE]
+    )
+
+
+    for (date in tradingDates) {
+        // 获取当日所有交易
+        dailyTrades = select * from tradeRecords where trade_date = date
+
+        posTB  = select ts_code, 
+                        iif(side == `buy, position+quantity,iif(side == `sell, iif(position-quantity > 0, position-quantity, 0.0), position)) as position,
+                        LastPrice,
+                        iif(side == `buy, cost-amount,iif(side == `sell, cost+amount, cost)) as cost
+                 from lj(posTB, dailyTrades, `ts_code)
+        
+        priceTB = loadPriceData(fullPriceTable, date, ts_code)
+         
+        newportfolioTable = select date as trade_date,
+                                initialCapital + sum(cost) as cash,
+                                sum(price*position) as position_value,
+                                initialCapital + sum(cost) + sum(price*position) as total_value,
+                                0.0 as daily_return,
+                                0.0 as cumulative_return,
+                                0.0 as drawdown,
+                                sum(iif(position != 0, 1, 0)) as holdings_count
+                         from lj(posTB, priceTB, `ts_code)
+
+        portfolioTable.append!(newportfolioTable)
+
+        newPosition = select date as trade_date,
+                            ts_code as ts_code,
+                            position as Position,
+                            price as Price,
+                            price*position as Value,
+                            initialCapital + sum(cost) as Cash
+                      from lj(posTB, priceTB, `ts_code)
+        allPosition.append!(newPosition)
+    }
+    
+    portfolioDaily = select trade_date,
+                            cash,
+                            position_value,
+                            total_value,
+                            percentChange(total_value) as  daily_return,
+                            (total_value - initialCapital) / initialCapital as cumulative_return,
+                            1.0 - total_value / cummax(total_value) as drawdown,
+                            holdings_count
+                     from portfolioTable
+    
+    metrics = dict(STRING, ANY)
+    metrics["start_date"] = startDate
+    metrics["end_date"] = endDate
+
+
+    // 最新净值相关指标
+    if (portfolioDaily.size() > 0) {
+        latestRecord = select last(total_value) as total_value, last(cash) as cash, 
+                          last(position_value) as position_value, last(holdings_count) as holdings_count 
+                   from portfolioDaily
+        
+        metrics["nav"] = latestRecord.total_value[0] / initialCapital
+        metrics["cash"] = latestRecord.cash[0]
+        metrics["position_value"] = latestRecord.position_value[0]
+        metrics["holdings_count"] = latestRecord.holdings_count[0]
+        
+        // 收益率指标
+        finalValue = latestRecord.total_value[0]
+        metrics["total_return"] = (finalValue - initialCapital) / initialCapital
+        
+        // 年化收益率
+        //tradingDays = count(portfolioDaily)
+        tradingDays = temporalParse(settings["end_date"], "yyyy-MM-dd") - temporalParse(settings["start_date"], "yyyy-MM-dd")
+        if (tradingDays > 0) {
+            metrics["annualized_return"] = pow(1 + metrics["total_return"], 252.0 / tradingDays) - 1
+        } else {
+            metrics["annualized_return"] = 0.0
+        }
+        
+        // 风险指标
+        metrics["max_drawdown"] = max(exec drawdown from portfolioDaily)
+        
+        // 夏普比率
+        dailyReturns = exec daily_return from portfolioDaily where trade_date > first(trade_date)
+        if (dailyReturns.size() > 0) {
+            annualVolatility = std(dailyReturns) * sqrt(252)
+            riskFreeRate = 0.03
+            metrics["sharpe_ratio"] = (metrics["annualized_return"] - riskFreeRate) / annualVolatility
+        } else {
+            metrics["sharpe_ratio"] = 0.0
+        }
+        
+        // 只统计买入金额（避免重复计算买卖）
+        totalBuyAmount = sum(exec amount from tradeRecords where side == `buy)
+
+        // 平均市值
+        avgMarketValue = avg(exec total_value from portfolioDaily)
+
+        // 回测年数
+        tradingYears = tradingDays / 252.0
+
+        // 年化换手率 = 买入总额 / 平均市值 / 年数 * 100
+        metrics["turnover_rate"] = totalBuyAmount / avgMarketValue / tradingYears
+
+        benchmarkData = select * from loadTable("dfs://day_factor", "index_daily") where trade_date in tradingDates and ts_code = benchmarkIndex order by trade_date
+
+        if (benchmarkData.size() > 0) {
+            // 基准总收益率
+            benchmarkStart = first(benchmarkData.close)
+            benchmarkEnd = last(benchmarkData.close)
+            metrics["benchmark_return"] = (benchmarkEnd - benchmarkStart) / benchmarkStart
+        
+            // 对齐组合和基准数据
+            benchmarkReturns = select trade_date, percentChange(close) as benchmark_return from benchmarkData
+            alignedData = select trade_date, daily_return, benchmark_return from lj(portfolioDaily, benchmarkReturns, `trade_date)
+        
+            if (alignedData.size() > 1) {
+                portfolioReturns = alignedData.daily_return
+                benchmarkReturns = alignedData.benchmark_return
+
+                // 计算Beta
+                covariance = covar(portfolioReturns, benchmarkReturns)
+                benchmarkVariance = var(benchmarkReturns)
+                metrics["beta"] = covariance / benchmarkVariance
+
+                // 计算Alpha (修正版)
+                riskFreeRate = 0.03
+                
+                // 组合年化收益率
+                portfolioAnnualReturn = metrics["annualized_return"]
+                
+                // 基准年化收益率
+                benchmarkAnnualReturn = pow(1 + metrics["benchmark_return"], 252.0 / count(benchmarkData)) - 1
+                
+                // Alpha = 组合年化收益 - [无风险利率 + Beta * (基准年化收益 - 无风险利率)]
+                metrics["alpha"] = portfolioAnnualReturn - (riskFreeRate + metrics["beta"] * (benchmarkAnnualReturn - riskFreeRate))
+            } else {
+                metrics["beta"] = 0.0
+                metrics["alpha"] = 0.0
+            }
+        } else {
+        metrics["benchmark_return"] = 0.0
+        metrics["alpha"] = 0.0
+        metrics["beta"] = 0.0
+        }
+    } else {
+        // 无交易情况
+        metrics["nav"] = 1.0
+        metrics["cash"] = initialCapital
+        metrics["position_value"] = 0.0
+        metrics["holdings_count"] = 0
+        metrics["total_return"] = 0.0
+        metrics["annualized_return"] = 0.0
+        metrics["max_drawdown"] = 0.0
+        metrics["sharpe_ratio"] = 0.0
+        metrics["turnover_rate"] = 0.0
+        metrics["benchmark_return"] = 0.0
+        metrics["alpha"] = 0.0
+        metrics["beta"] = 0.0
+    }
+    
+    i = 0
+    basePath = "/home/appadmin/zhangjiarong/server/csvdata/"
+    do{
+        // 构造文件路径
+        fileName1 = "PositionRecords_" + string(i) + ".csv"
+        fileName2 = "TradeRecords_" + string(i) + ".csv"
+        fileName3 = "DailyPortfolio_" + string(i) + ".csv"
+        
+        path1 = basePath + fileName1
+        path2 = basePath + fileName2
+        path3 = basePath + fileName3
+        // 检查文件是否存在
+        if (!exists(path1) and !exists(path2) and !exists(path3)) {
+            // 保存表格为CSV格式
+            saveText(allPosition, path1);
+            saveText(tradeRecords, path2);
+            saveText(portfolioDaily, path3);
+            // 导出链接
+            link_dict = dict(STRING, ANY)
+            link_dict["PositionRecord_link"] = "http://183.134.101.137:8066/" + fileName1
+            link_dict["TradeRecords_link"] = "http://183.134.101.137:8066/" + fileName2
+            link_dict["DailyPortfolio_link"] = "http://183.134.101.137:8066/" + fileName3
+            metrics["csv_link"] = link_dict
+            break;
+        }
+        i += 1;
+    }
+    while (true) 
+    return metrics
+}
+
+
+
+/**
+ * 主回测函数
+ * 
+ * @param backtestId: SYMBOL - 回测配置ID
+ * 
+ * @return DICT - 回测报告
+ */
+def run_backtest(backtestId) {
+    // backtestId = `BT_20251125_094233
+    // backtestId = `BT_20251114_162148
+    // bacetestId = `BT_20251120_113936
+    // ========== 阶段1: 加载配置并初始化 ==========
+    config = loadBacktestConfig(backtestId)
+    
+    // 解析配置
+    settings = parseExpr(config["backtest_settings"]).eval()
+    // settings = {"start_date":"2022-01-01","end_date":"2022-06-07","initial_capital":1000000,"benchmark":"000852.SH"}
+    print("=====已加载回测配置======")
+    print(settings)
+    //universeRules = parseExpr(config["universe_rules"]).eval()
+    universeStocks = exec distinct securityid from objByName(config["selected_stocks"])
+    strategyRules = parseExpr(config["strategy_rules"]).eval()
+    positionRules = parseExpr(config["position_rules"]).eval()
+    rebalanceRules = parseExpr(config["rebalance_rules"]).eval()
+    tradeRules = parseExpr(config["trade_rules"]).eval()
+
+    
+    // 初始化状态变量
+    cash = double(settings["initial_capital"])
+    positions = table(
+        array(SYMBOL, 0) as ts_code,
+        array(INT, 0) as qty
+    )
+    
+    // 创建交易记录总表(内存表)
+    allTrades = table(100:0, 
+        `trade_date`ts_code`side`quantity`price`amount,
+        [DATE, SYMBOL, SYMBOL, INT, DOUBLE, DOUBLE]
+    )
+    
+    // ========== 阶段2: 获取交易日历 ==========
+    tradingDates = temporalParse(settings["start_date"], "yyyy-MM-dd")..temporalParse(settings["end_date"], "yyyy-MM-dd")
+    
+    lastRebalanceDate = NULL
+    
+    // 步骤1: 股票池筛选 + 因子和价格加载
+    //universeStocks = filterUniverse(settings["end_date"], universeRules)
+
+    fullfactorTable = select value from loadTable("dfs://factor", "day_factor") where securityid in universeStocks and factorname in strategyRules["factors"] pivot by tradetime, securityid, factorname
+    fullpriceTable = select trade_date, ts_code, close as price from loadTable("dfs://day_factor","stock_daily_prev") where ts_code in universeStocks
+
+    print("=====已完成因子和价格数据加载======")
+
+    // ========== 阶段3: 按日循环 ==========
+    for (tradingDate in tradingDates) {
+        // tradingDate = 2020.11.17
+        // 判断是否调仓日
+        shouldRebalance = checkRebalanceDay(tradingDate, lastRebalanceDate, rebalanceRules)
+        
+        if (shouldRebalance) {
+            
+            // 步骤2: 多因子选股打分
+            targetStocks = calculateScores(fullfactorTable, tradingDate, universeStocks, strategyRules, positionRules)
+            
+            // 步骤3: 加载价格数据
+            priceData = loadPriceData(fullpriceTable, tradingDate, universeStocks)
+            
+            // 步骤4: 计算目标仓位
+            targetShares = calcPositions(
+                targetStocks, 
+                cash, 
+                positions, 
+                priceData, 
+                positionRules
+            )
+            
+            // 步骤5: 执行交易
+            tradeResult = executeTrades(targetShares, positions, cash, priceData, tradeRules, tradingDate)
+            
+            // 步骤6: 更新状态变量
+            cash = tradeResult["cash"]
+            positions = tradeResult["positions"]
+
+            if (isNull(cash)) {
+                print("!!! 错误: 现金变为 NULL，停止回测")
+                break
+            }         
+
+            // 步骤7: 记录交易
+            if (tradeResult["trades"].size() > 0) {
+                allTrades.append!(tradeResult["trades"])
+            }
+            
+            lastRebalanceDate = tradingDate
+        }
+    }
+    
+    // ========== 阶段4: 返回交易记录 ==========
+    result = calculatePerformance(fullpriceTable, allTrades, settings)
+    return result
+}
+
+// ==================== 回测函数测试 ====================
+//run_backtest(`BT_20251113_110403)
+// =====================================================
+
+// ==================== MCP工具：创建回测代码 ============================
+description_run_backtest = '
+根据backtestID去执行回测。
+参数说明：
+- backtestId: STRING, 回测配置ID
+示例: run_backtest("BT_20251113_110403")
+'
+if (`run_backtest in (exec name from listMCPTools())) {
+    updateMCPTool(`run_backtest, run_backtest, 
+                  [`backtestId], 
+                  ["STRING"], 
+                  description_run_backtest)
+} else {
+    addMCPTool(`run_backtest, run_backtest, 
+               [`backtestId], 
+               ["STRING"], 
+               description_run_backtest)
+}
+publishMCPTools(`run_backtest)
+print("✅ MCP工具已注册: run_backtest")
+
+
+

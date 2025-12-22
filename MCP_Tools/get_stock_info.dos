@@ -1,0 +1,67 @@
+def get_stock_info(stockCodes, dates, resultTableName, sessionId){
+    // 检查输入参数是否为空
+    if (size(stockCodes) == 0) {
+        return "错误：股票代码列表不能为空"
+    }
+    if (size(dates) == 0) {
+        return "错误：日期范围不能为空"
+    }
+    // 加载分布式表并筛选
+    t = select * from loadTable("dfs://basic_factor", "stock_info") where ts_code in stockCodes and trade_date in date(dates)
+    // 检查查询结果是否为空
+    if (size(t) == 0) {
+        return "错误：未找到匹配的股票信息，请检查股票代码或日期范围是否正确"
+    }
+    // 如果 sessionId 不为空，则共享结果表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+
+    result = dict(STRING, ANY)
+    result["查询结果样例"] = t[0:min(10, t.size())]
+
+    // 如果 sessionId 为空，直接返回查询结果
+    return toStdJson(result)
+}
+
+description_get_stock_info = '
+用于从 DolphinDB 详细信息表 stock_info 加载指定股票代码和日期范围的基础信息，并将结果保存为共享内存表供后续分析使用。内容包括以下字段：ts_code(股票代码)、trade_date(交易日期)、name(股票名称)、industry(行业)、area(地区)、pe(市盈率)、float_share(流通股本)、total_share(总股本)、total_assets(总资产)、liquid_assets(流动资产)、fixed_assets(固定资产)、reserved(公积金)、reserved_pershare(每股公积金)、eps(每股收益)、bvps(每股净资产)、pb(市净率)、list_date(上市日期)、undp(未分配利润)、per_undp(每股未分配利润)、rev_yoy(营业收入同比增长率)、profit_yoy(净利润同比增长率)、gpr(毛利率)、npr(净利率)、holder_num(股东人数)。
+
+参数说明：
+- stockCodes: STRING[]，股票代码列表，需要查看几个股票必须一个个填入代码
+- dates: STRING[]，日期范围列表，必填，如 ["2025.01.01", "2025.01.02"]
+- resultTableName: STRING，共享内存表名，用于后续分析。建议使用有意义的名称如 "stock_info"
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+// 查询两只股票在指定日期的基础信息（完整代码）
+get_stock_info(["600519.SH", "000001.SZ"], [2025.01.01, 2025.01.02], "stock_info", "session123")
+
+// 查询两只股票在指定日期的基础信息（不共享内存表）
+get_stock_info(["600519.SH", "000001.SZ"], [2025.11.04], "", "")
+'
+
+if (`get_stock_info in (exec name from listMCPTools())) {
+  updateMCPTool(`get_stock_info, get_stock_info, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "STRING[]", "STRING", "STRING"], 
+                description_get_stock_info)
+} else {
+  addMCPTool(`get_stock_info, get_stock_info, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "STRING[]", "STRING", "STRING"], 
+                description_get_stock_info)
+}
+
+publishMCPTools(`get_stock_info)
+
+
+// callMCPTool(name="get_stock_info", args={"stockCodes":["600519.SH", "000001.SZ"],"dates":["2025.01.01", "2025.01.02"],"resultTableName":"stock_info","sessionId":"session123"}, published=true)

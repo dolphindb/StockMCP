@@ -1,0 +1,49 @@
+def get_industry_info(indexCodes){
+    // 检查输入参数
+    if (size(indexCodes) == 0) {
+        return "错误：指数代码列表不能为空"
+    } else {
+        // 根据指数代码筛选
+        t = select * from loadTable("dfs://basic_factor", "index_basic") where ts_code in indexCodes
+    }
+    
+    // 检查查询结果是否为空
+    if (size(t) == 0) {
+        return "错误：未找到匹配的指数信息，请检查指数代码是否正确"
+    }
+
+    result = dict(STRING, ANY)
+    result["查询结果样例"] = t[0:min(10, t.size())]
+
+    // 如果 sessionId 为空，直接返回查询结果
+    return toStdJson(result)
+}
+
+description_get_industry_info = '
+用于从 DolphinDB 指数基础信息表 index_basic 加载指定指数代码的基础信息
+
+参数说明：
+- indexCodes: STRING[]，指数代码列表，如 ["000001.SH", "399001.SZ"]。
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据。内容包括以下字段：ts_code（指数代码）、name（指数名称）、market（市场）、publisher（发布方）、category（分类）、base_date（基期日期）、base_point（基点）、list_date（发布日期）、update_time（更新时间）。
+
+示例：
+
+// 查询上证指数和深证成指的基础信息（完整代码）
+get_industry_info(["000001.SH", "399001.SZ"])
+'
+
+if (`get_industry_info in (exec name from listMCPTools())) {
+  updateMCPTool(`get_industry_info, get_industry_info, 
+                [`indexCodes], 
+                ["STRING[]"], 
+                description_get_industry_info)
+} else {
+  addMCPTool(`get_industry_info, get_industry_info, 
+                [`indexCodes], 
+                ["STRING[]"], 
+                description_get_industry_info)
+}
+
+publishMCPTools(`get_industry_info)

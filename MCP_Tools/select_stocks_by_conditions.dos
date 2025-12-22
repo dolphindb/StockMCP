@@ -1,0 +1,207 @@
+def select_stocks_by_conditions(strDates, strRules, resultsName) {
+    /*
+    strRules = '{"base_index":"csi1000","industry":"", 
+        "filter_expr":"list_days >= 252 and ST = 0 and S = 0 and is_down_limit = 0 and is_up_limit = 0 and (main_board = 1 or chi_next_board = 1)", 
+        "factors":["list_days","ST","S","is_down_limit","is_up_limit","main_board","chi_next_board"]}'
+    strDates = "[\"2025.11.17\", \"2025.11.17\"]"
+    resultsName = 'test'
+
+    rules = {"base_index":"csi1000","industry":"", "filter_expr":"", "factors":[]}
+    dates = ["2025.11.17"]
+
+    rules = {"base_index":"","industry":"","filter_expr":"net_profit_margin > 10 and ROE > 10 and total_mv > 500000 and total_mv < 10000000 and (star_market_board = 1 or main_board = 1)","factors":["net_profit_margin","ROE","total_mv","star_market_board","main_board"]}
+    strRules = "{\"base_index\":\"csi1000\",\"industry\":\"\",\"filter_expr\":\"list_days >= 252 and ST = 0 and S = 0 and is_up_limit = 0 and is_down_limit = 0 and (main_board = 1 or star_market_board = 1)\",\"factors\":[\"list_days\",\"ST\",\"S\",\"is_up_limit\",\"is_down_limit\",\"main_board\",\"star_market_board\"]}"
+    strDates = "[\"2025.11.11\"]"
+    rules = {"base_index":"","industry":"","filter_expr":'securityid == "002594.SZ" or securityid == "600519.SH"',"factors":[]}
+    rules = {"base_index":"","industry":"","filter_expr":"net_profit_margin > 0.1 and total_mv > 500000 and total_mv < 10000000 and (main_board = 1 or chi_next_board = 1)","factors":["net_profit_margin","total_mv","main_board","chi_next_board"]}
+    strDates = "{\"startDate\":\"2025.11.04\", \"endDate\":\"2025.11.11\"}"
+    */
+    newConfig = table([resultsName] as name, [strRules] as sel_rules, [strDates] as sel_dates)
+    loadTable("dfs://config", "sel_stock_config").append!(newConfig)
+    result = dict(STRING, ANY)
+    rules = parseExpr(strRules).eval()
+    dates = parseExpr(strDates).eval()
+    startDate = temporalParse(strReplace(dates['startDate'], "-", "."), "yyyy.MM.dd")
+    endDate = temporalParse(strReplace(dates['endDate'], "-", "."), "yyyy.MM.dd")
+
+    // 1. 加载数据并筛选指数成分股
+    //lastDate = iif(temporalParse(max(dates), "yyyy.MM.dd")<tmpDate, temporalParse(max(dates), "yyyy.MM.dd"), tmpDate) //暂时先用用户提供的最后一个交易日或2025.11.11的成分股作为基准
+    lastDate = endDate //暂时先用用户提供的最后一个交易日或2025.11.11的成分股作为基准
+    if (not isNull(rules["base_index"])) {
+        baseIndex = rules["base_index"]
+        baseStocks = exec con_code from loadTable("dfs://basic_factor", "index_weight") 
+            where trade_date == (select max(trade_date) from loadTable("dfs://basic_factor", "index_weight") where trade_date <= lastDate and index_type == baseIndex)
+            and index_type == baseIndex
+    } else {
+        print("未指定基准指数，使用全部股票作为基准")
+        baseStocks = exec distinct ts_code from loadTable("dfs://basic_factor", "stock_basic") 
+    }
+
+    // 2. 加载数据并筛选行业成分股
+    selectedIndustry = iif(isNull(rules["industry"]), "", rules["industry"])
+    if (selectedIndustry == "") {
+        industryStocks = exec ts_code from loadTable("dfs://basic_factor", "stock_basic")
+    } else {
+        industryStocks = exec ts_code from loadTable("dfs://basic_factor", "stock_basic") where industry == selectedIndustry
+    }
+
+    // 3. 合并基准股票池
+    candidateStocks = baseStocks[baseStocks in industryStocks]
+
+    // 4. 检查是否需要因子筛选
+    factors = rules["factors"]
+    whereConditions = rules["filter_expr"]
+
+    // 4.1 检查因子是否在元数据表中存在
+    if (size(factors) > 0) {
+        existingFactors = exec factor_name from loadTable("dfs://factor_meta", "factor_meta") 
+                        where factor_name in factors
+ 
+        missingFactors = factors[!(factors in existingFactors)]
+        
+        if (size(missingFactors) > 0) {
+            throw "以下因子在元数据表中不存在: " + concat(missingFactors, ", ") + 
+                "。请使用检索因子工具确认因子名称是否正确。"
+        }
+        
+    }
+
+    // 如果 filter_expr 为空，直接返回
+    if ( whereConditions == "") {
+        print("=====已完成股票筛选(无因子过滤)======")
+        result["股票数量"] = size(candidateStocks)
+        //result["股票列表"] = candidateStocks
+        //result["共享内存表"] = table(candidateStocks as securityid)
+        result["共享表名"] = resultsName
+
+        if (trim(resultsName) != "") {
+            share(table(candidateStocks as securityid, candidateStocks as ts_code), resultsName)
+        }
+
+        return toStdJson(result)
+    }
+
+    // 5. 加载因子数据并筛选
+    Dates = startDate..endDate
+    // 如果没有因子但是有wherecondition，则是在选个股
+    if (size(factors) == 0) {
+        contextTable = select distinct securityid from loadTable("dfs://factor", "day_factor") 
+                   where tradetime in Dates and securityid in candidateStocks
+    }else{
+        contextTable = select value from loadTable("dfs://factor", "day_factor") 
+                   where tradetime in Dates and securityid in candidateStocks and factorname in factors 
+                   pivot by tradetime, securityid, factorname
+    }
+    
+    if (contextTable.size() == 0) {
+        throw "没有找到因子数据"
+    }
+
+    //filterStocks = sql(sqlCol("*"), where = parseExpr(whereConditions), from = contextTable).eval()
+    try{
+        filterStocks = sql(sqlCol("*"), where = parseExpr(whereConditions), from = contextTable).eval()
+    }
+    catch(ex){
+        a = ex[1]
+        posLeft = strpos(a, "[")
+        posRight = strpos(a, "]")
+        missingfactor = a[(posLeft+1):posRight]
+        //throw "以下因子在元数据表中不存在: "+missingfactor+"。缺少数据，请同步数据后重试。"
+        return "以下因子在元数据表中不存在: "+missingfactor+"。缺少数据，请同步数据后重试。"
+    }
+
+    print("=====已完成股票筛选======")
+    
+    if (trim(resultsName) != "") {
+        //share(select distinct securityid, (distinct securityid) as ts_code from filterStocks, resultsName)
+        share(select securityid as ts_code, * from filterStocks, resultsName)
+    }
+
+    result["股票数量"] = size(exec distinct securityid from filterStocks)
+    //result["股票列表"] = exec distinct securityid from filterStocks
+    //result["共享内存表"] = select distinct securityid from filterStocks
+    result["共享表名"] = resultsName
+    return toStdJson(result)
+}
+
+description_select_stocks_by_conditions = '根据用户输入的筛选条件进行股票选择。调用此工具之前，必须使用检索因子工具，条件选股的指标必须经过元数据查询存在。
+
+参数说明：
+- strDates: STRING，包含交易开始日期和交易结束日期
+    - startDate: 交易开始日期
+    - endDate: 交易结束日期
+- strRules: STRING，筛选规则字典，包含以下字段：
+    - base_index: STRING，基准指数目前必须从"csi1000"/"sz50"/"hs300"取，分别代表“中证1000/上证50/沪深300”。（可选，默认为空，表示不限制指数成分股）
+    - industry: STRING，行业名称，如 "银行"（可选，默认为空，表示不限制行业成分股）
+    - filter_expr: STRING，筛选条件字符串(SQL WHERE子句格式),如 "list_days >= 252 and ST = 0 and S = 0"
+    - factors: STRING[]，因子名称列表，必须包含filter_expr中涉及的所有因子。如果filter_expr中的唯一因子是ts_code或者securityid，则不用包含。
+
+    使用or运算符时，必须使用括号，如"(star_market_board = 1 or main_board = 1)"
+
+- resultsName: STRING，共享内存表名，用于后续分析,必须在末尾包含sessionid。为空时，代表只选出不做后续分析。
+
+返回：
+- 操作结果信息，包含符合条件的股票列表,数量和共享表名
+
+示例：
+// 选择中证1000指数中，属于“食品饮料”行业且过去一年未停牌且非ST，滚动市盈率>10的股票
+select_stocks_by_conditions(
+    "{\"startDate\":\"2021.01.01\", \"endDate\":\"2025.11.17\"}",
+    "{\"base_index\":\"csi1000\",\"industry\":\"食品饮料\", \
+    \"filter_expr\":\"list_days >= 252 and ST = 0 and S = 0 and pe > 10\", \
+    \"factors\":[\"list_days\",\"ST\",\"S\", \"pe\"]}",
+    "selected_stocks_result_sessionid"
+)
+
+// 给我净利润增长率大于20%并且没有停牌的上市满一年的创业板或主板股票名单
+select_stocks_by_conditions(
+    "{\"startDate\":\"2025.11.17\", \"endDate\":\"2025.11.17\"}",
+    "{\"base_index\":\"\",\"industry\":\"\", \
+    \"filter_expr\":\"net_profit_margin > 0.2 and (star_market_board = 1 or main_board = 1) and S = 0 and list_days > 252\", \
+    \"factors\":[\"net_profit_margin\", \"star_market_board\", \"main_board\", \"S\", \"list_days\"]}",
+    "selected_stocks_result_sessionid"
+)
+
+// 告诉我净利润增速大于10%， roe大于10%，市值小于1000亿大于50亿，在创业板或主板的股票,交易时间从2021年1月1号到2025年十一月17日
+select_stocks_by_conditions(
+    "{\"startDate\":\"2021.01.01\", \"endDate\":\"2025.11.17\"}",
+    "{\"base_index\":\"\",\"industry\":\"\", \
+    \"filter_expr\":\"net_profit_margin > 0.1 and ROE > 0.1 and total_mv < 10000000 and total_mv > 500000 and (star_market_board = 1 or main_board = 1)\", \
+    \"factors\":[\"net_profit_margin\", \"star_market_board\", \"ROE\", \"total_mv\", \"main_board\"]}",
+    "selected_stocks_result_sessionid"
+)
+
+// 帮我找出比亚迪和茅台股票代码
+select_stocks_by_conditions(
+    "{\"startDate\":\"2025.11.17\", \"endDate\":\"2025.11.17\"}",
+    "{\"base_index\":\"\",\"industry\":\"\", \
+    \"filter_expr\":\"securityid == \"002594.SZ\" or securityid == \"600519.SH\"\", \
+    \"factors\":[]}",
+    "selected_stocks_result_sessionid"
+)
+
+// 我想要找一些股票：净资产收益率大于8%，净利润增长率>10%，资产负债率<50%，总市值大于100亿，市盈率>10, 日成交额>1000万元
+select_stocks_by_conditions(
+    "{\"startDate\":\"2025.11.17\", \"endDate\":\"2025.11.17\"}",
+    "{\"base_index\":\"\",\"industry\":\"\", \
+    \"filter_expr\":\"ROE > 0.08 and net_profit_margin > 0.1 and debt_ratio < 0.5 and total_mv > 1000000 and pe > 10 and amount > 10000\", \
+    \"factors\":[\"ROE\",\"net_profit_margin\",\"deb_ratio\",\"total_mv\", \"pe\", \"amount\"]}",
+    "selected_stocks_result_sessionid"
+)
+
+'
+
+// 注册MCP函数
+if (`select_stocks_by_conditions in (exec name from listMCPTools())) {
+  updateMCPTool(`select_stocks_by_conditions, select_stocks_by_conditions, 
+                `strDates`strRules`resultsName, 
+                ["STRING", "STRING", "STRING"], 
+                description_select_stocks_by_conditions)
+} else {
+  addMCPTool(`select_stocks_by_conditions, select_stocks_by_conditions, 
+                `strDates`strRules`resultsName, 
+                ["STRING", "STRING", "STRING"],  
+                description_select_stocks_by_conditions)
+}
+
+publishMCPTools(`select_stocks_by_conditions)

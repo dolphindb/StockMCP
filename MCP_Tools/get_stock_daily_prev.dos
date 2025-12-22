@@ -1,0 +1,65 @@
+def get_stock_daily_prev(stockCodes, dates, resultTableName, sessionId) {
+    // 检查输入参数是否为空
+    if (size(stockCodes) == 0) {
+        return "错误：股票代码列表不能为空"
+    }
+    if (size(dates) == 0) {
+        return "错误：日期范围不能为空"
+    }
+
+    // 加载分布式表并筛选
+    t = select * from loadTable("dfs://day_factor", "stock_daily_prev") 
+        where ts_code in stockCodes and trade_date in date(dates)
+
+    // 检查查询结果是否为空
+    if (size(t) == 0) {
+        return "错误：未找到匹配的行情数据，请检查股票代码或日期范围是否正确"
+    }
+
+    // 如果 sessionId 不为空，则共享结果表
+    if (trim(sessionId) != "") {
+        if (trim(resultTableName) != "") {
+            resultName = resultTableName + "_" + sessionId
+            share(t, resultName)
+            return "查询成功：共享表名 " + resultName + "\n前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+        }
+    }
+
+    // 如果 sessionId 为空，直接返回查询结果
+    return "查询成功：前10行数据：\n" + toStdJson(t[0:min(10, t.size())])
+}
+
+description_get_stock_daily_prev = '
+用于从 DolphinDB 表 stock_daily_prev 加载指定股票代码和日期范围的行情数据，并将结果保存为共享内存表供后续分析使用。内容包括以下字段：ts_code(股票代码)、trade_date(交易日期)、open(开盘价)、high(最高价)、low(最低价)、close(收盘价)、pre_close(前收盘价)、change(涨跌额)、pct_chg(涨跌幅)、vol(成交量)、amount(成交额)、turnover_rate(换手率)、volume_ratio(量比)、adj_factor(复权因子)、ma5(5日均价)、ma_v_5(5日均量)、ma20(20日均价)、ma_v_20(20日均量)、ma50(50日均价)、ma_v_50(50日均量)。
+
+参数说明：
+- stockCodes: STRING[]，股票代码列表
+- dates: DATE[]，日期范围列表
+- resultTableName: STRING，共享内存表名，用于后续分析。建议使用有意义的名称如 "daily_prev"
+- sessionId: STRING，当前会话唯一id，用于生成唯一的共享表名。如果为空，则不共享内存表，直接返回查询结果
+
+返回：
+- 操作结果信息，包含共享表名（如果有）和前10行样例数据
+
+示例：
+
+// 查询两只股票在指定日期的行情数据（完整代码）
+get_stock_daily_prev(["600519.SH", "000001.SZ"], [2025.01.01, 2025.01.02], "daily_prev", "session123")
+
+// 查询两只股票在指定日期的行情数据（不共享内存表）
+get_stock_daily_prev(["600519.SH", "000001.SZ"], [2025.01.02], "", "")
+'
+
+if (`get_stock_daily_prev in (exec name from listMCPTools())) {
+  updateMCPTool(`get_stock_daily_prev, get_stock_daily_prev, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "STRING[]", "STRING", "STRING"], 
+                description_get_stock_daily_prev)
+} else {
+  addMCPTool(`get_stock_daily_prev, get_stock_daily_prev, 
+                `stockCodes`dates`resultTableName`sessionId, 
+                ["STRING[]", "STRING[]", "STRING", "STRING"], 
+                description_get_stock_daily_prev)
+}
+
+publishMCPTools(`get_stock_daily_prev)
