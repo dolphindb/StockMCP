@@ -1,0 +1,73 @@
+module DolphinDBModules::EasyTushare::utils
+
+/*
+*  @ brief
+*  This module is used to provide some utility functions for the EasyTushare module.
+*  @ Author: DolphinDB
+*  @ Last modification time: 2025.05.07
+*  @ DolphinDB server version: 3.00.2.3
+*/
+/*
+*  @FunctionName: EasyTushareLog
+*  @Brief:  Write log messages for the EasyTushare module.
+*  @Param: errorMsg: error message to be written to log.
+*  @Param: isDict: whether the error message is a dictionary.
+*  @Return: None
+*  @SampleUsage: EasyTushareLog("Checking log.", isDict=false)
+*/
+def EasyTushareLog(errorMsg, isDict=false){
+	if(isDict==false){
+        writeLog("<EasyTushare>, " + errorMsg)
+		print(now() + ", <EasyTushare>, " + errorMsg)
+	}else{
+		writeLog("<EasyTushare>, " + toStdJson(errorMsg))
+		print(toStdJson(errorMsg))
+	}
+}
+/*
+*  @FunctionName: runDirScript
+*  @Brief:  Execute all the dos scripts in the specified directory.
+*  @Param: dir: directory where the dos scripts are located. (Must be on the same server as the DolphinDB execution node)
+*  @Return: None
+*  @SampleUsage: runDirScript(getHomeDir() + "/modules/DolphinDBModules/EasyTushare/functionView")
+*/
+def runDirScript(dir){
+    EasyTushareLog("Run dir scripty, dir = " + dir + ".")
+    // get all the files in the specified directory
+    dirFiles = files(dir)
+    if (count(dirFiles) == 0) {
+        EasyTushareLog('Run dir finished, the dir is empty.')
+    }
+    else{
+        dirFiles  = dirFiles.sortBy!(`filename, 1)
+        // run all the dos scripts in the specified directory
+        for(scriptFile in dirFiles.filename){
+            /*@test
+            scriptFile = "getTBHandle.dos"
+            */
+            try{
+                if(endsWith(scriptFile, 'dos')){
+                    filePath = dir + '/' + scriptFile
+                    run(filePath)
+                    EasyTushareLog("Run dir script successfully, script = " + filePath)
+                }
+            }
+            catch(ex){
+                EasyTushareLog("Run dir script failed, script = " + filePath)
+            }
+        }
+    }
+    EasyTushareLog("Run dir finished.")
+}
+
+/*
+*  @FunctionName: genEasyTushareView
+*  @Brief:  Generate the default function view for the EasyTushare module.
+*  @Param: None
+*  @Return: None
+*  @SampleUsage: genEasyTushareView()
+*/
+def genEasyTushareView(){
+    dir = getHomeDir() + "/uploads/functionView"
+    runDirScript(dir)
+}

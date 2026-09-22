@@ -1,4 +1,4 @@
-defg calc_mdd(nav) { return max(1 - nav / cummax(nav)) }
+defg calc_mdd(nav) { return max(1 - nav / cummax(1.0 join nav)[1:]) }
 
 def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries, sessionId) {
     // factor = "pe"
@@ -10,7 +10,7 @@ def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries,
 
     // --- 0. 参数校验 ---
     if (isNull(factor)) throw "错误：因子名称不能为空"
-    if (holdingPeriod <= 0) throw "错误：持有期必须为正整数"
+    if (holdingPeriod <= 0 or holdingPeriod != int(holdingPeriod)) throw "错误：持有期必须为正整数"
     if (isNull(startDate) or isNull(endDate)) throw "错误：起始日期和结束日期不能为空"
     if (isNull(sessionId)) throw "错误：Session ID不能为空"
 
@@ -29,7 +29,7 @@ def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries,
         params["dt_start"] = date(startDate)
         params["dt_end"] = date(endDate)
         
-        sqlStr = "select " + actualTimeCol + " as trade_date, securityid, value as factor_value from tbl where " + actualTimeCol + " >= dt_start and " + actualTimeCol + " <= dt_end"
+        sqlStr = "select date(" + actualTimeCol + ") as trade_date, symbol(securityid) as securityid, double(value) as factor_value from tbl where date(" + actualTimeCol + ") >= dt_start and date(" + actualTimeCol + ") <= dt_end"
         factorData = runSQL(sqlStr, , params)
     } else {
         // 路径B：数据库读取 (dfs://day_factor)
@@ -54,100 +54,38 @@ def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries,
         if (size(factorData) == 0) throw "错误：行业筛选后数据为空"
     }
 
-    // --- 3. 准备行情数据 ---
-    // 3.1 加载个股日行情 (用于计算IC和组合收益)
-    stock_daily = select trade_date, ts_code as securityid, close, pct_chg 
-                  from loadTable("dfs://day_factor", "stock_daily_prev")
-                  where trade_date >= date(startDate) and trade_date <= date(endDate)
-    
-    // 3.2 加载基准指数 (沪深300)
-    // 按照要求：从 dfs://day_factor 的 index_daily 表加载 000300.SH
-    try {
-        hs300_daily = select trade_date, pct_chg 
-                      from loadTable("dfs://day_factor", "index_daily")
-                      where ts_code = "000300.SH"
-                      and trade_date >= date(startDate) and trade_date <= date(endDate)
-    } catch(ex) {
-        // 容错：如果指定路径不存在，尝试用全市场均值代替，避免程序崩溃
-        hs300_daily = select mean(pct_chg) as pct_chg from stock_daily group by trade_date
-    }
-    
-    if (size(hs300_daily) == 0) {
-         // 如果没取到数据，用0填充
-         hs300_daily = select distinct trade_date, 0.0 as pct_chg from stock_daily
-    }
-
-    // --- 4. IC 计算 (Information Coefficient) ---
-    // 逻辑：计算 T日因子 与 T+holdingPeriod 日后收益的相关性
-    ic_base = select f.trade_date, f.securityid, f.factor_value, s.close 
-              from factorData f 
-              inner join stock_daily s on f.securityid = s.securityid and f.trade_date = s.trade_date
-    
-    ic_base = select trade_date, securityid, factor_value, 
-                     move(close, -int(holdingPeriod))/close - 1 as forward_return
-              from ic_base context by securityid
-    
-    ic_base = select * from ic_base where isValid(forward_return) and isValid(factor_value)
-    
-    daily_ic_stats = select corr(factor_value, forward_return) as ic from ic_base group by trade_date
+    // Compute returns for each SAME security before joining sparse factor rows.
+    stock_daily = select trade_date, ts_code as securityid, close from loadTable("dfs://day_factor", "stock_daily_prev")
+                  where trade_date between date(startDate):date(endDate)
+    returns = select trade_date, securityid,
+                     move(close,-int(holdingPeriod))/close-1 as forward_return,
+                     move(close,-1)/close-1 as next_return
+              from stock_daily context by securityid csort trade_date
+    samples = select f.trade_date,f.securityid,f.factor_value,r.forward_return,r.next_return
+              from factorData f inner join returns r on f.securityid=r.securityid and f.trade_date=r.trade_date
+              where isValid(f.factor_value)
+    ic_base = select * from samples where isValid(forward_return)
+    daily_ic_stats = select corr(factor_value,forward_return) as ic from ic_base group by trade_date
     mean_ic_val = mean(daily_ic_stats.ic)
     ic_std = std(daily_ic_stats.ic)
-    ic_ir_val = iif(ic_std == 0, 0.0, mean_ic_val / ic_std)
-    // --- 5. 净值曲线计算 (模拟日频调仓) ---
-    // 逻辑：T日根据因子分层，持有至 T+1 日。
-    
-    // 5.1 每日因子分层 (1-5层)
-    nav_base = select trade_date, securityid, factor_value,
-                      asof(quantileSeries(factor_value, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0], interpolation='midpoint'), factor_value) + 1 as layer
-               from factorData context by trade_date
-    
-    // 5.2 关联收益率
-    // 将 stock_daily 关联进来。这里我们计算的是 Group 在 T 日的平均表现。
-    // 但是，T日的涨跌幅是属于 T-1 日持仓的收益。
-    // 简单处理：计算 T日 各组平均涨跌幅，然后整体 shift -1 (即 T+1 的涨跌幅归属于 T日 的决策)
-    merged = select n.trade_date, n.layer, s.pct_chg 
-             from nav_base n
-             inner join stock_daily s on n.securityid = s.securityid and n.trade_date = s.trade_date
-    
-    layer_ret = select mean(pct_chg) as ret from merged group by trade_date, layer
-    
-    // 5.3 宽表转换
-    ret_pivot = select ret/100.0 as ret from layer_ret pivot by trade_date, layer
-    oldNames = string(1..5)
-    newNames = "group_" + string(1..5)
-    rename!(ret_pivot, oldNames, newNames)
-    
-    // 5.4 收益率对齐 (T日因子 -> T+1 收益)
-    // 将收益率列向前移动一天
-    ret_pivot = select trade_date, 
-                       move(group_1, -1) as group_1, move(group_2, -1) as group_2, 
-                       move(group_3, -1) as group_3, move(group_4, -1) as group_4, 
-                       move(group_5, -1) as group_5
-                from ret_pivot
-    ret_pivot = ret_pivot[0:(size(ret_pivot)-1)] // 移除最后一行空值
-
-    // 5.5 准备基准收益 (也需要 shift -1)
-    bench_ret = select trade_date, move(pct_chg, -1)/100.0 as hs300 
-                from hs300_daily order by trade_date
-    
-    // 5.6 准备全样本基准
-    univ_ret = select mean(pct_chg)/100.0 as benchmark_port 
-               from stock_daily group by trade_date
-    univ_ret = select trade_date, move(benchmark_port, -1) as benchmark_port from univ_ret
-
-    // 5.7 合并数据
-    final_df = select * from ret_pivot 
-               inner join bench_ret on ret_pivot.trade_date = bench_ret.trade_date
-               inner join univ_ret on ret_pivot.trade_date = univ_ret.trade_date
-    
-    // 填充空值
-    final_df = select trade_date, 
-                      nullFill(group_1, 0.0) as group_1, nullFill(group_2, 0.0) as group_2,
-                      nullFill(group_3, 0.0) as group_3, nullFill(group_4, 0.0) as group_4,
-                      nullFill(group_5, 0.0) as group_5, 
-                      nullFill(benchmark_port, 0.0) as benchmark_port,
-                      nullFill(hs300, 0.0) as hs300
-               from final_df order by trade_date
+    ic_ir_val = iif(ic_std==0,0.0,mean_ic_val/ic_std)
+    // Stable quintiles: sort factor then security, partition into exactly 1..5.
+    nav_base = select *,int(floor(rowNo(factor_value)*5 \ count(factor_value)))+1 as layer
+               from samples where isValid(next_return)
+               context by trade_date csort factor_value,securityid
+    nav_base = select * from nav_base context by trade_date having count(*)>=5
+    if (size(nav_base)==0) throw "至少需要5只股票及两个交易日的有效因子和行情数据"
+    layer_ret = select mean(next_return) as ret from nav_base group by trade_date,layer
+    ret_pivot = select ret from layer_ret pivot by trade_date,layer
+    rename!(ret_pivot,string(1..5),"group_"+string(1..5))
+    hs300_daily = select trade_date,close from loadTable("dfs://day_factor","index_daily")
+                  where ts_code="000300.SH" and trade_date between date(startDate):date(endDate)
+                  order by trade_date
+    if (size(hs300_daily)<2) throw "缺少沪深300指数行情，请导入 index_daily"
+    bench_ret = select trade_date,move(close,-1)/close-1 as hs300 from hs300_daily
+    univ_ret = select mean(next_return) as benchmark_port from samples group by trade_date
+    final_df = select * from lj(lj(ret_pivot,bench_ret,`trade_date),univ_ret,`trade_date) order by trade_date
+    if (any(isNull(final_df.hs300))) throw "基准行情未覆盖全部评价日期"
 
     // 5.8 计算累计净值 (Start=1)
     nav_table = select trade_date,
@@ -217,8 +155,7 @@ def evaluate_stock_factor(factor, holdingPeriod, startDate, endDate, industries,
     
     share(nav_table, tableNameNAV)
     share(metrics, tableNamePerf)
-    REPORT_BASE_URL = "http://183.134.101.137:8067"
-    dashboardUrl = REPORT_BASE_URL + "/?sessionid=" + sessionId
+    dashboardUrl = export_table_to_csv(tableNameNAV)
 
     // --- 8. 返回结果 ---
     res = dict(STRING, ANY)
@@ -251,7 +188,7 @@ description_evaluate_stock_factor = '
 - JSON 因子评价的摘要，以及两个共享内存表的表名：
   1. nav_table: 包含日期、5层组合净值、基准组合净值、沪深300净值。
   2. perf_table: 包含各组合的年化收益、波动率、夏普、最大回撤、超额收益、信息比率、相对胜率等。
-  3. summary: 因子评价的文字摘要，包括平均IC、ICIR、多空组合表现、可视化报告的URL，请一定给用户报告的URL。
+  3. summary: 因子评价的文字摘要，包括平均IC、ICIR、多空组合表现、可视化报告的URL，返回 CSV 导出路径或已配置下载链接。
 
     evaluate_stock_factor(
         "pe",                // 因子名称

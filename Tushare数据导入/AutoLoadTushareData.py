@@ -1,92 +1,46 @@
-'''
-Author: tanhua hua.tan@dolphindb.com
-Date: 2025-10-21 16:22:33
-LastEditors: tanhua hua.tan@dolphindb.com
-LastEditTime: 2025-10-22 12:50:24
-FilePath: \PythonModules\TushareToDDB\AutoLoadTushareData.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
-'''
-'''
-Author: tanhua hua.tan@dolphindb.com
-Date: 2025-10-21 16:22:33
-LastEditors: tanhua hua.tan@dolphindb.com
-LastEditTime: 2025-10-21 16:38:08
-FilePath: \PythonModules\TushareToDDB\AutoLoadTushareData.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
-'''
-#!/usr/bin/env python
-# coding: utf-8
-import basic
-import importlib
+"""Legacy optional-source runner; new deployments should use scripts/import_tushare.py."""
+import argparse
 import datetime
-import dolphindb as ddb
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import importlib
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import basic
 
-# 设置日志配置
-logger_AutoLoadTushareData = logging.getLogger('logger_AutoLoadTushareData')
-logger_AutoLoadTushareData.setLevel(logging.INFO)
-# 日志输出到文件
-fileHandler_AutoLoadTushareData = logging.FileHandler(basic.logDir + "/AutoLoadTushareData.log")
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fileHandler_AutoLoadTushareData.setFormatter(formatter)
-# 日志输出到控制台
-console_AutoLoadTushareData = logging.StreamHandler() 
-console_AutoLoadTushareData.setFormatter(formatter)
-# 将 Handler 添加到 Logger
-logger_AutoLoadTushareData.addHandler(fileHandler_AutoLoadTushareData)
-logger_AutoLoadTushareData.addHandler(console_AutoLoadTushareData)
 
-def runDataSourceScript(dataSource, mode):
-    try:
-        # 如果数据导入模式为当日新增数据导入，且数据源为增量更新模式
-        if mode == 1:
-            startDate = basic.startDate
-            endDate = basic.endDate
-        if mode == 2:
-            fullUpdateList = ['stock_basic', 'stock_daily_back', 'stock_daily_prev', 'stock_monthly_back', 'stock_monthly_prev', 'stock_name', 'stock_weekly_back', 'stock_weekly_prev']
-            if dataSource not in fullUpdateList:
-                startDate = datetime.date.today().strftime("%Y%m%d")
-                endDate = datetime.date.today().strftime("%Y%m%d")
-            else:
-                startDate = ''
-                endDate = datetime.date.today().strftime("%Y%m%d")
+def main(argv=None):
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--host',default=basic.session['host'])
+    parser.add_argument('--port',type=int,default=basic.session['port'])
+    parser.add_argument('--username',default=basic.session['username'])
+    parser.add_argument('--password',default=basic.session['password'])
+    parser.add_argument('--token',default=basic.token)
+    parser.add_argument('--mode',type=int,choices=[1,2],default=basic.mode)
+    parser.add_argument('--start_date',default=basic.startDate)
+    parser.add_argument('--end_date',default=basic.endDate)
+    parser.add_argument('--parallelism',type=int,default=basic.parallelism)
+    parser.add_argument('--data_sources',nargs='+',default=basic.dataSourceList)
+    parser.add_argument('--log_dir',default=basic.logDir)
+    parser.add_argument('--max_retries',type=int,default=basic.maxRetries)
+    args=parser.parse_args(argv)
+    if not args.password or not args.token:parser.error('Set DDB_PASSWORD and TUSHARE_TOKEN (or supply explicit arguments)')
+    if args.parallelism<1:parser.error('parallelism must be positive')
+    basic.session=dict(host=args.host,port=args.port,username=args.username,password=args.password)
+    basic.token=args.token;basic.logDir=args.log_dir;basic.maxRetries=args.max_retries
+    os.makedirs(basic.logDir,exist_ok=True)
+    logging.basicConfig(level=logging.INFO,handlers=[logging.StreamHandler(),logging.FileHandler(os.path.join(basic.logDir,'AutoLoadTushareData.log'))])
+    def run(source):
+        module=importlib.import_module('dataSource.'+source)
+        start,end=args.start_date,args.end_date
+        if args.mode==2:
+            start=end=datetime.date.today().strftime('%Y%m%d')
+            if source in ['stock_basic','stock_name'] or source.endswith(('_back','_prev')):start=args.start_date
+        # Each legacy module owns its DDB session. No shared global session is
+        # used by parallel jobs. Errors propagate through future.result().
+        module.main(basic.session,start,end,basic.token,source,basic.maxRetries)
+        logging.info('Completed %s',source)
+    with ThreadPoolExecutor(max_workers=args.parallelism) as pool:
+        jobs={pool.submit(run,source):source for source in args.data_sources}
+        for future in as_completed(jobs):future.result()
 
-        module = importlib.import_module("dataSource." + dataSource)
-        s.run('writeLogLevel(INFO, "easyTushareImport - AutoLoadTushareData - Loaded module: '+str(module)+'")')
-        logger_AutoLoadTushareData.info("Loaded module: %s", module)
-
-        # 调用脚本中的 main 函数
-        if hasattr(module, "main"):
-            module.main(basic.session, startDate, endDate, basic.token, dataSource, basic.maxRetries)
-            logger_AutoLoadTushareData.info("Data source %s import completed.", dataSource)
-            s.run('writeLogLevel(INFO, "'+'easyTushareImport - '+'AutoLoadTushareData'+' - Data source '+dataSource+' import completed.")')
-        else:
-            raise Exception(f"The script '{dataSource}' does not define a 'main' function.")
-    except Exception as e:
-        logger_AutoLoadTushareData.error("Failed to import the data source %s: %s.", dataSource, e)
-        s.run('writeLogLevel(ERROR, "easyTushareImport - '+"AutoLoadTushareData"+" - Failed to import the data source "+dataSource+": "+str(e)+'.")')
-
-if __name__ == "__main__":
-    try:
-        # 与 DolphinDB 建立会话和连接
-        session = basic.session
-        s = ddb.session(session["host"], session["port"], session["username"], session["password"])
-    except Exception as e:
-        logger_AutoLoadTushareData.error("Failed to connect to DolphinDB server: %s.", e)
-        exit(1)
-
-    # 设置并行度
-    parallelism = basic.parallelism
-    # 使用 ThreadPoolExecutor 并行执行
-    with ThreadPoolExecutor(max_workers=parallelism) as executor:
-        # 提交任务到线程池
-        futureToDataSource = {
-            executor.submit(runDataSourceScript, dataSource, basic.mode): dataSource
-            for dataSource in basic.dataSourceList
-        }
-        # 等待任务完成并处理结果
-        for future in as_completed(futureToDataSource):
-            dataSource = futureToDataSource[future]
-            future.result()
+if __name__=='__main__':main()

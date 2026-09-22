@@ -1,0 +1,5 @@
+dolphindb>=3.0.4.2,<4
+numpy>=1.24,<3
+pandas>=2.0,<3
+tushare>=1.4,<2
+requests[socks]>=2.31,<3

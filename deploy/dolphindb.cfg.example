@@ -1,0 +1,13 @@
+# Example for a dedicated single-node DolphinDB 3.00.6 installation.
+# Keep the vendor's dolphindb.dos, marketHoliday, libraries and valid license.
+localSite=localhost:8848:stockmcp
+mode=single
+maxMemSize=4
+maxConnections=64
+workerNum=2
+localExecutors=1
+maxBatchJobWorker=1
+dataSync=1
+OLAPCacheEngineSize=1
+TSDBCacheEngineSize=1
+newValuePartitionPolicy=add

@@ -1,15 +1,37 @@
-# Stock MCP 简介
+# Stock MCP
 
-DolphinDB Stock MCP Server（以下简称为 Stock MCP）是一款面向股票智能投研的 AI 金融工具包。
+DolphinDB 原生 MCP 股票投研工具：指标检索、选股、因子评价、策略回测，以及行情、财报、资金流查询。本仓库提供 21 个工具、完整初始化入口、Tushare 导入、因子加工和离线样例验收。
 
-基于高性能分布式国产时序数据库 DolphinDB 和 SQL 语言构建，Stock MCP 旨在借助 AI 大模型能力，降低股票研究与量化分析中对专业金融领域数据的处理门槛。
+- [本地部署与升级](docs/local_deployment.md)
+- [数据口径、数据源和更新流程](docs/data_pipeline.md)
+- [验收与已知限制](docs/validation.md)
+- [官网介绍](https://docs.dolphindb.cn/zh/mcp/stock_mcp.html)
+- [DolphinDB MCP 使用指南](https://docs.dolphindb.cn/zh/mcp/mcp_use_guide.html)
 
-围绕 “Data + AI” 的核心理念，它能够充分发挥数据的价值，为股票投研提供高效、智能的一体化解决方案。
+## 五步运行离线样例
 
-借助 MCP 服务，您可以将 ChatGPT、Claude、DeepSeek 或自建的大模型，借助第三方 MCP Client 平台如 Cherry Studio 与 DolphinDB 工具生态无缝结合。
+先部署带有效 license 的 DolphinDB Server。推荐本仓库实测的 **3.00.6**，保留发行包的 `dolphindb.dos`、动态库和 `marketHoliday`。单机配置参考 [deploy/dolphindb.cfg.example](deploy/dolphindb.cfg.example)。使用全新的独立实例运行样例。
 
-通过灵活的 Prompt 设计和工具链编排，快速搭建高效的金融智能应用。
+```bash
+# Python 3.10+；下面以 Linux/macOS 为例。
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 
-无论是指标选股、因子评价，还是多因子策略回测，MCP 都能让大模型根据您的需求自动调度相应工具，实现端到端的数据分析与决策流程。
+export DDB_HOST=127.0.0.1
+export DDB_PORT=8848
+export DDB_USER=admin
+# 使用自己的密码；避免把密码提交到仓库。
+read -s DDB_PASSWORD
+export DDB_PASSWORD
 
-相关文档移步到文档中心：[https://docs.dolphindb.cn/zh/mcp/stock_mcp.html](https://docs.dolphindb.cn/zh/mcp/stock_mcp.html)
+python scripts/install.py
+python scripts/load_demo.py
+python scripts/smoke.py
+```
+
+`install.py` 保留已有数据库和数据，可重复执行。`load_demo.py` 生成明确标记的**合成数据**，不需要 Tushare Token；若实例已有真实行情，会拒绝混入样例。`smoke.py` 验证全部工具和原生 HTTP MCP，结果保存到 `artifacts/smoke.json`。
+
+MCP 客户端地址为 `http://<DDB_HOST>:<DDB_PORT>/mcp`，传输方式为 Streamable HTTP。登录 DolphinDB 后运行 `getAuthenticatedUserTicket()` 获取当前账户 ticket，设置 `Authorization: Bearer <ticket>`。不需要另起一个 Python MCP Server。
+
+真实数据部署请使用独立实例，按[数据流程](docs/data_pipeline.md)导入、加工后再连接客户端。

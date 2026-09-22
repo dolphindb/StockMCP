@@ -18,7 +18,7 @@
 def loadBacktestConfig(backtestId) {
     // backtestId = `BT_20251124_102246
     //configTable = loadTable("dfs://config", "backtest_config")
-    configTable = loadTable("dfs://config", "backtest_config_test")
+    configTable = loadTable("dfs://config", "backtest_config")
     configRow = exec * from configTable where backtest_id = backtestId
     if (configRow.size() == 0) {
         throw "配置不存在: " + backtestId
@@ -301,7 +301,7 @@ def calcPositions(targetStocks, cash, positions, priceData, positionRules) {
                       on targetStocks.ts_code = priceData.ts_code
 
     // 1. 选出分数最高的N只股票
-    maxStocks = positionRules["max_stocks"]
+    maxStocks = int(positionRules["max_stocks"])
     topStocks = select * from stocksWithPrice order by score desc limit maxStocks
     
     // 2. 计算当前持仓总市值
@@ -582,7 +582,7 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
     startDate = settings["start_date"]
     endDate = settings["end_date"]
     // 获取所有交易日
-    tradingDates = exec distinct trade_date from tradeRecords order by trade_date
+    tradingDates = exec distinct trade_date from fullPriceTable where trade_date between date(startDate):date(endDate) order by trade_date
     
     portfolioTable = table(10000:0, 
         `trade_date`cash`position_value`total_value`daily_return`cumulative_return`drawdown`holdings_count,
@@ -602,9 +602,9 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
     )
 
 
-    for (date in tradingDates) {
+    for (valuationDate in tradingDates) {
         // 获取当日所有交易
-        dailyTrades = select * from tradeRecords where trade_date = date
+        dailyTrades = select * from tradeRecords where trade_date = valuationDate
 
         posTB  = select ts_code, 
                         iif(side == `buy, position+quantity,iif(side == `sell, iif(position-quantity > 0, position-quantity, 0.0), position)) as position,
@@ -612,9 +612,9 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
                         iif(side == `buy, cost-amount,iif(side == `sell, cost+amount, cost)) as cost
                  from lj(posTB, dailyTrades, `ts_code)
         
-        priceTB = loadPriceData(fullPriceTable, date, ts_code)
+        priceTB = loadPriceData(fullPriceTable, valuationDate, ts_code)
          
-        newportfolioTable = select date as trade_date,
+        newportfolioTable = select valuationDate as trade_date,
                                 initialCapital + sum(cost) as cash,
                                 sum(price*position) as position_value,
                                 initialCapital + sum(cost) + sum(price*position) as total_value,
@@ -626,7 +626,7 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
 
         portfolioTable.append!(newportfolioTable)
 
-        newPosition = select date as trade_date,
+        newPosition = select valuationDate as trade_date,
                             ts_code as ts_code,
                             position as Position,
                             price as Price,
@@ -668,7 +668,7 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
         
         // 年化收益率
         //tradingDays = count(portfolioDaily)
-        tradingDays = temporalParse(settings["end_date"], "yyyy-MM-dd") - temporalParse(settings["start_date"], "yyyy-MM-dd")
+        tradingDays = size(portfolioDaily)
         if (tradingDays > 0) {
             metrics["annualized_return"] = pow(1 + metrics["total_return"], 252.0 / tradingDays) - 1
         } else {
@@ -683,7 +683,7 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
         if (dailyReturns.size() > 0) {
             annualVolatility = std(dailyReturns) * sqrt(252)
             riskFreeRate = 0.03
-            metrics["sharpe_ratio"] = (metrics["annualized_return"] - riskFreeRate) / annualVolatility
+            metrics["sharpe_ratio"] = iif(annualVolatility>0,(metrics["annualized_return"]-riskFreeRate)/annualVolatility,0.0)
         } else {
             metrics["sharpe_ratio"] = 0.0
         }
@@ -758,7 +758,7 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
     }
     
     i = 0
-    basePath = "/home/appadmin/zhangjiarong/server/csvdata/"
+    basePath = stockmcpExportDir()
     do{
         // 构造文件路径
         fileName1 = "PositionRecords_" + string(i) + ".csv"
@@ -776,9 +776,9 @@ def calculatePerformance(fullPriceTable, tradeRecords, settings){
             saveText(portfolioDaily, path3);
             // 导出链接
             link_dict = dict(STRING, ANY)
-            link_dict["PositionRecord_link"] = "http://183.134.101.137:8066/" + fileName1
-            link_dict["TradeRecords_link"] = "http://183.134.101.137:8066/" + fileName2
-            link_dict["DailyPortfolio_link"] = "http://183.134.101.137:8066/" + fileName3
+            link_dict["PositionRecord_link"] = stockmcpExportLink(fileName1)
+            link_dict["TradeRecords_link"] = stockmcpExportLink(fileName2)
+            link_dict["DailyPortfolio_link"] = stockmcpExportLink(fileName3)
             metrics["csv_link"] = link_dict
             break;
         }
@@ -805,16 +805,16 @@ def run_backtest(backtestId) {
     config = loadBacktestConfig(backtestId)
     
     // 解析配置
-    settings = parseExpr(config["backtest_settings"]).eval()
+    settings = fromStdJson(config["backtest_settings"])
     // settings = {"start_date":"2022-01-01","end_date":"2022-06-07","initial_capital":1000000,"benchmark":"000852.SH"}
     print("=====已加载回测配置======")
     print(settings)
-    //universeRules = parseExpr(config["universe_rules"]).eval()
+    //universeRules = fromStdJson(config["universe_rules"])
     universeStocks = exec distinct securityid from objByName(config["selected_stocks"])
-    strategyRules = parseExpr(config["strategy_rules"]).eval()
-    positionRules = parseExpr(config["position_rules"]).eval()
-    rebalanceRules = parseExpr(config["rebalance_rules"]).eval()
-    tradeRules = parseExpr(config["trade_rules"]).eval()
+    strategyRules = fromStdJson(config["strategy_rules"])
+    positionRules = fromStdJson(config["position_rules"])
+    rebalanceRules = fromStdJson(config["rebalance_rules"])
+    tradeRules = fromStdJson(config["trade_rules"])
 
     
     // 初始化状态变量
@@ -831,7 +831,7 @@ def run_backtest(backtestId) {
     )
     
     // ========== 阶段2: 获取交易日历 ==========
-    tradingDates = temporalParse(settings["start_date"], "yyyy-MM-dd")..temporalParse(settings["end_date"], "yyyy-MM-dd")
+    tradingDates = date(settings["start_date"])..date(settings["end_date"])
     
     lastRebalanceDate = NULL
     
@@ -844,6 +844,7 @@ def run_backtest(backtestId) {
     print("=====已完成因子和价格数据加载======")
 
     // ========== 阶段3: 按日循环 ==========
+    tradingDates = exec distinct trade_date from fullpriceTable where trade_date in tradingDates order by trade_date
     for (tradingDate in tradingDates) {
         // tradingDate = 2020.11.17
         // 判断是否调仓日
@@ -852,7 +853,9 @@ def run_backtest(backtestId) {
         if (shouldRebalance) {
             
             // 步骤2: 多因子选股打分
-            targetStocks = calculateScores(fullfactorTable, tradingDate, universeStocks, strategyRules, positionRules)
+            signalDate = exec max(tradetime) from fullfactorTable where tradetime < tradingDate
+            if (isNull(signalDate)) continue
+            targetStocks = calculateScores(fullfactorTable, signalDate, universeStocks, strategyRules, positionRules)
             
             // 步骤3: 加载价格数据
             priceData = loadPriceData(fullpriceTable, tradingDate, universeStocks)
@@ -889,7 +892,7 @@ def run_backtest(backtestId) {
     
     // ========== 阶段4: 返回交易记录 ==========
     result = calculatePerformance(fullpriceTable, allTrades, settings)
-    return result
+    return toStdJson(result)
 }
 
 // ==================== 回测函数测试 ====================

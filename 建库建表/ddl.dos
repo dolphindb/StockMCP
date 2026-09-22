@@ -8,44 +8,24 @@ module DolphinDBModules::EasyTushare::createDBTB
 *  @ DolphinDB server version: 3.00.2.3
 */
 
-use DolphinDBModules::EasyTushare::utils
+// No external EasyTushare dependency is required by these schema functions.
 
 def createDB(){
-    try{
-        drop database if exists "dfs://basic_factor"
-        drop database if exists "dfs://factor"
-        drop database if exists "dfs://day_factor"
-        drop database if exists "dfs://week_factor"
-        drop database if exists "dfs://month_factor"
-        drop database if exists "dfs://quarter_factor"
-        drop database if exists "dfs://year_factor"
-    }catch(ex){
-        print("Database does not exist, no need to drop.")
+    if (!existsDatabase("dfs://factor")) {
+        d1 = database("", VALUE, 2021.01.01..2021.01.01)
+        d2 = database("", HASH, [SYMBOL,50])
+        database("dfs://factor", COMPO, [d1,d2], engine="TSDB")
     }
-
-    db1 = database("",VALUE,2021.01.01..2021.01.01)
-    db2 = database("",HASH,[SYMBOL,50])
-    db = database("dfs://factor",COMPO,[db1,db2],engine="TSDB")
-    colName = `tradetime`securityid`value`factorname
-    colType = [DATE,SYMBOL,DOUBLE,SYMBOL]
-    schema = table(1:0, colName, colType)
-
-    db = database("dfs://factor")
-    db.createPartitionedTable(
-        schema,
-        "day_factor",
-        `tradetime`factorname,
-        ,`factorname`securityid`tradetime,
-        LAST,[hashBucket{,20},hashBucket{,50}]
-    )
-
-
-    database("dfs://basic_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
-    database("dfs://day_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
-    database("dfs://week_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
-    database("dfs://month_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
-    database("dfs://quarter_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
-    database("dfs://year_factor", RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    if (!existsTable("dfs://factor", "day_factor")) {
+        t = table(1:0, `tradetime`securityid`value`factorname, [DATE,SYMBOL,DOUBLE,SYMBOL])
+        database("dfs://factor").createPartitionedTable(t, "day_factor", `tradetime`factorname,
+            sortColumns=`factorname`securityid`tradetime, keepDuplicates=LAST,
+            sortKeyMappingFunction=[hashBucket{,20},hashBucket{,50}])
+    }
+    for (dbName in ["basic_factor","day_factor","week_factor","month_factor","quarter_factor","year_factor"]) {
+        path = "dfs://" + dbName
+        if (!existsDatabase(path)) database(path, RANGE, date(datetimeAdd(1990.01M,0..100*12,'M')), engine="TSDB")
+    }
 }
 /*
 *  @FunctionName: createStockBasic
@@ -57,6 +37,7 @@ def createDB(){
 def createStockBasic(){
     dbName = "dfs://basic_factor"
     tbName = "stock_basic"
+    if (existsTable(dbName, tbName)) return
     if(existsDatabase(dbName)){
         db = database(dbName)
         schemaTB = table(
@@ -106,6 +87,7 @@ def createStockBasic(){
 def createIndexBasic(){
     dbName = "dfs://basic_factor"
     tbName = "index_basic"
+    if (existsTable(dbName, tbName)) return
     if(existsDatabase(dbName)){
         db = database(dbName)              
         // 根据Tushare指数基本信息接口的完整字段定义表结构
@@ -166,6 +148,7 @@ def createIndexBasic(){
 def createIndexDaily(){
     dbName = "dfs://day_factor"
     tbName = "index_daily"
+    if (existsTable(dbName, tbName)) return
     
     if(existsDatabase(dbName)){
         db = database(dbName)
@@ -236,6 +219,7 @@ def createIndexDaily(){
 def createIndexWeight(){
     dbName = "dfs://basic_factor"
     tbName = "index_weight"
+    if (existsTable(dbName, tbName)) return
     if(existsDatabase(dbName)){
         db = database(dbName)
         schemaTB = table(
@@ -279,6 +263,7 @@ def createIndexWeight(){
 def createStockST(){
     dbName = "dfs://basic_factor"
     tbName = "stock_st"
+    if (existsTable(dbName, tbName)) return
     if(existsDatabase(dbName)){
         db = database(dbName)
         schemaTB = table(
@@ -320,6 +305,7 @@ def createStockST(){
 def createStockPremarket(){
     dbName = "dfs://basic_factor"
     tbName = "stock_premarket"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -367,6 +353,7 @@ def createStockPremarket(){
 def createStockName(){
     dbName = "dfs://basic_factor"
     tbName = "stock_name"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -411,6 +398,7 @@ def createStockName(){
 def createStockNew(){
     dbName = "dfs://basic_factor"
     tbName = "stock_new"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -465,6 +453,7 @@ def createStockNew(){
 def createStockInfo(){
     dbName = "dfs://basic_factor"
     tbName = "stock_info"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -547,6 +536,7 @@ def createStockInfo(){
 def createStockDaily(){
     dbName = "dfs://day_factor"
     tbName = "stock_daily"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -603,6 +593,7 @@ def createStockDaily(){
 def createStockWeekly(){
     dbName = "dfs://week_factor"
     tbName = "stock_weekly"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -659,6 +650,7 @@ def createStockWeekly(){
 def createStockMonthly(){
     dbName = "dfs://month_factor"
     tbName = "stock_monthly"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -715,6 +707,7 @@ def createStockMonthly(){
 def createStockDailyPrev(){
     dbName = "dfs://day_factor"
     tbName = "stock_daily_prev"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -788,6 +781,7 @@ def createStockDailyPrev(){
 def createStockDailyBack(){
     dbName = "dfs://day_factor"
     tbName = "stock_daily_back"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -861,6 +855,7 @@ def createStockDailyBack(){
 def createStockWeeklyPrev(){
     dbName = "dfs://week_factor"
     tbName = "stock_weekly_prev"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -930,6 +925,7 @@ def createStockWeeklyPrev(){
 def createStockWeeklyBack(){
     dbName = "dfs://week_factor"
     tbName = "stock_weekly_back"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -999,6 +995,7 @@ def createStockWeeklyBack(){
 def createStockMonthlyPrev(){
     dbName = "dfs://month_factor"
     tbName = "stock_monthly_prev"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1068,6 +1065,7 @@ def createStockMonthlyPrev(){
 def createStockMonthlyBack(){
     dbName = "dfs://month_factor"
     tbName = "stock_monthly_back"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1137,6 +1135,7 @@ def createStockMonthlyBack(){
 def createStockAdjFactor(){
     dbName = "dfs://day_factor"
     tbName = "stock_adj_factor"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1176,6 +1175,7 @@ def createStockAdjFactor(){
 def createStockDailyBasic(){
     dbName = "dfs://day_factor"
     tbName = "stock_daily_basic"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1246,6 +1246,7 @@ def createStockDailyBasic(){
 def createStockLimit(){
     dbName = "dfs://day_factor"
     tbName = "stock_limit"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1289,6 +1290,7 @@ def createStockLimit(){
 def createStockSuspend(){
     dbName = "dfs://day_factor"
     tbName = "stock_suspend"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1330,6 +1332,7 @@ def createStockSuspend(){
 def createStockDailyInfo(){
     dbName = "dfs://day_factor"
     tbName = "stock_daily_info"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1419,6 +1422,7 @@ def createStockDailyInfo(){
 def createMoneyflow(){
     dbName = "dfs://day_factor"
     tbName = "moneyflow"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1485,6 +1489,7 @@ def createMoneyflow(){
 def createMoneyflowIndThs(){
     dbName = "dfs://day_factor"
     tbName = "moneyflow_ind_ths"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1535,6 +1540,7 @@ def createMoneyflowIndThs(){
 def createQuarterStockIncome(){
     dbName = "dfs://quarter_factor"
     tbName = "quarter_stock_income"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1731,6 +1737,7 @@ def createQuarterStockIncome(){
 def createYearStockIncome(){
     dbName = "dfs://year_factor"
     tbName = "year_stock_income"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -1927,6 +1934,7 @@ def createYearStockIncome(){
 def createQuarterStockBalancesheet(){
     dbName = "dfs://quarter_factor"
     tbName = "quarter_stock_balancesheet"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -2257,6 +2265,7 @@ def createQuarterStockBalancesheet(){
 def createYearStockBalancesheet(){
     dbName = "dfs://year_factor"
     tbName = "year_stock_balancesheet"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -2587,6 +2596,7 @@ def createYearStockBalancesheet(){
 def createQuarterStockCashflow(){
     dbName = "dfs://quarter_factor"
     tbName = "quarter_stock_cashflow"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -2807,6 +2817,7 @@ def createQuarterStockCashflow(){
 def createYearStockCashflow(){
     dbName = "dfs://year_factor"
     tbName = "year_stock_cashflow"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -3027,6 +3038,7 @@ def createYearStockCashflow(){
 def createStockIndexBasic(){
     dbName = "dfs://basic_factor"
     tbName = "stock_index_basic"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -3079,6 +3091,7 @@ def createStockIndexBasic(){
 def createStockIncome(){
     dbName = "dfs://day_factor"
     tbName = "stock_income"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -3275,6 +3288,7 @@ def createStockIncome(){
 def createStockBalancesheet(){
     dbName = "dfs://day_factor"
     tbName = "stock_balancesheet"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }
@@ -3605,6 +3619,7 @@ def createStockBalancesheet(){
 def createStockCashflow(){
     dbName = "dfs://day_factor"
     tbName = "stock_cashflow"
+    if (existsTable(dbName, tbName)) return
     if(!existsDatabase(dbName)){
         print("Database of " + dbName + " does not exist, please create database first!")
     }

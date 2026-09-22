@@ -1,18 +1,16 @@
 def search_stock_factor_meta_by_keywords(keywords){
-    keywordList = keywords.split(" ")
-    // 构造动态的 OR 查询条件
-    condition = ""
-    for (k in keywordList) {
-        if (condition == "") {
-            condition = "factor_name like '%" + k + "%' or description like '%" + k + "%'"
-        } else {
-            condition = condition + " or factor_name like '%" + k + "%' or description like '%" + k + "%'"
-        }
+    if (strlen(trim(keywords))==0) throw "keywords must not be empty"
+    corpus = select factor_name, database_name + table_name as dataSources, description, factor_code
+             from loadTable("dfs://factor_meta", "factor_meta")
+    mask = take(false, size(corpus))
+    for (k in split(lower(trim(keywords)), " ")) {
+        if (strlen(k)>0) mask = mask or strpos(lower(string(corpus.factor_name)),k)>=0 or strpos(lower(corpus.description),k)>=0
     }
-    // 加载元数据表并筛选
-    condition = 'select factor_name, database_name + table_name as dataSources, description, "" as factor_code from loadTable("dfs://factor_meta", "factor_meta") where strpos(factor_name, "ttm")<0 and (' + condition + ')'
-    t = parseExpr(condition).eval()
-    t.append!(select factor_name, source_table as dataSources, description, factor_code from get_factor_metas_by_rag(keywords) where strpos(factor_name, "ttm")<0)
+    t = corpus[mask]
+    retrieved = get_factor_metas_by_rag(keywords)
+    extra = select factor_name, source_table as dataSources, description, factor_code from retrieved
+            where !(factor_name in t.factor_name)
+    t.append!(extra)
 
     result = dict(STRING, ANY)
     result["query_text"] = keywords
@@ -25,7 +23,7 @@ def search_stock_factor_meta_by_keywords(keywords){
 }
 
 description_search_stock_factor_meta_by_keywords = '
-用于从 DolphinDB 股票因子元数据表中混合检索与指定关键词相关的因子信息。该工具支持通过多个关键词（以空格分隔）进行关键词匹配 + 向量检索，快速定位库内的因子定义及其描述信息。
+用于从 DolphinDB 股票因子元数据表中混合检索与指定关键词相关的因子信息。该工具支持通过多个关键词（以空格分隔）进行关键词匹配 + 本地 UTF-8 字节 n-gram 向量余弦检索（无外部模型），快速定位库内的因子定义及其描述信息。
 
 在每次查询指标之前，应该调用该函数。还会返回当前session的id，你必须在后续的所有需要存储共享内存表时，加上该id作为表名。如"wide_data_sessionid"
 

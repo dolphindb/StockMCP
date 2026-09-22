@@ -1,0 +1,7 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+Tushare数据导入/log/
+artifacts/

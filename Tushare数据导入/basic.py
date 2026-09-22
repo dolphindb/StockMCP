@@ -19,10 +19,14 @@ import os
 mode = 1
 
 # tushare token
-token = ""
+token = os.getenv("TUSHARE_TOKEN", "")
 
 # DolphinDB Session 配置
 session = {
+    "host": os.getenv("DDB_HOST", "127.0.0.1"),
+    "port": int(os.getenv("DDB_PORT", "8848")),
+    "username": os.getenv("DDB_USER", "admin"),
+    "password": os.getenv("DDB_PASSWORD", ""),
 }
 
 # 数据源导入日期范围，在 mode = 1 时生效
@@ -55,7 +59,7 @@ dataSourceList = [
     'moneyflow_ind_ths',
     'quarter_stock_cashflow',
     'quarter_stock_income',
-    'quarter_stock_balancesheet'.
+    'quarter_stock_balancesheet',
     'year_stock_cashflow',
     'year_stock_balancesheet',
     'year_stock_income'
@@ -64,7 +68,9 @@ dataSourceList = [
 maxRetries = 5
 
 # 导入并行度，适用于多数据源并行导入场景
-parallelism = 19
+parallelism = 1
 
 # 数据导入日志路径
 logDir = os.path.dirname(__file__) + "/log/"
+
+os.makedirs(logDir, exist_ok=True)

@@ -1,0 +1,45 @@
+// UTF-8 byte n-gram binary vectors. Local lexical retrieval, not a pretrained
+// semantic model. No API key, remote service or hidden vector store is needed.
+def stockmcpTextVector(text) {
+    normalized = lower(text)
+    n = strlen(normalized)
+    hashes = array(INT,0)
+    if (n == 0) return hashes
+    for (width in 1..6) {
+        if (n >= width) {
+            for (i in 0..(n-width)) hashes.append!(hashBucket(substr(normalized,i,width),1048576))
+        }
+    }
+    return distinct(hashes)
+}
+
+def get_factor_metas_by_rag(keywords) {
+    corpus = select factor_name, source_table, description, factor_code, retrieval_text from loadTable("dfs://factor_meta","factor_meta")
+    result = table(1:0,`factor_name`source_table`description`factor_code`score,[STRING,STRING,STRING,STRING,DOUBLE])
+    q = stockmcpTextVector(trim(keywords))
+    if (size(q) == 0) return result
+    for (row in corpus) {
+        v = stockmcpTextVector(row.retrieval_text)
+        score = sum(q in v) / sqrt(double(size(q)*size(v)))
+        if (lower(trim(keywords)) == lower(string(row.factor_name))) score += 1.0
+        if (score >= 0.15) result.tableInsert(string(row.factor_name),row.source_table,row.description,row.factor_code,score)
+    }
+    return select top 10 * from result order by score desc, factor_name
+}
+
+def stockmcpValidateName(name) {
+    if (regexFind(name,"^[A-Za-z_][A-Za-z0-9_]{0,127}$") != 0) throw "Invalid result table name"
+    return true
+}
+
+def stockmcpExportDir() {
+    path = getHomeDir() + "/stockmcp_exports/"
+    if (!exists(path)) mkdir(path)
+    return path
+}
+
+def stockmcpExportLink(fileName) {
+    url = exec value from loadTable("dfs://config","stockmcp_settings") where name="export_url"
+    if (size(url)>0 && strlen(url[0])>0) return url[0] + "/" + fileName
+    return stockmcpExportDir() + fileName
+}

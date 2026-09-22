@@ -144,11 +144,13 @@ tradeRules = "{\"commission_rate\":0.0015}"
 
         // 1. 生成唯一的 backtest_id
         timestamp = format(now(), "yyyyMMdd_HHmmss")
-        backtestId = "BT_" + timestamp
+        backtestId = "BT_" + format(now(), "yyyyMMdd_HHmmss_SSS") + "_" + string(rand(1000000000,1)[0])
         
         // 2. 验证JSON格式
         try {
-            settingsDict = parseExpr(backtestSettings).eval()
+            settingsDict = fromStdJson(backtestSettings)
+            settingsDict["start_date"] = string(settingsDict["start_date"])
+            settingsDict["end_date"] = string(settingsDict["end_date"])
             // 如果日期有其他格式传入，如'YYYY/MM/DD', 'YYYY.MM.DD', 则转换成“YYYY-MM-DD”
             if (strpos(settingsDict["start_date"], ".")>-1 or strpos(settingsDict["start_date"], "/")>-1) {
                 settingsDict["start_date"]  =strReplace(settingsDict["start_date"], iif(strpos(settingsDict["start_date"], ".")>-1, ".", "/"), "-")
@@ -157,10 +159,10 @@ tradeRules = "{\"commission_rate\":0.0015}"
                 settingsDict["end_date"] = strReplace(settingsDict["end_date"], iif(strpos(settingsDict["end_date"], ".")>-1, ".", "/"), "-")
             }
             //universeDict = parseExpr(universeRules).eval()
-            strategyDict = parseExpr(strategyRules).eval()
-            positionDict = parseExpr(positionRules).eval()
-            rebalanceDict = parseExpr(rebalanceRules).eval()
-            tradeDict = parseExpr(tradeRules).eval()
+            strategyDict = fromStdJson(strategyRules)
+            positionDict = fromStdJson(positionRules)
+            rebalanceDict = fromStdJson(rebalanceRules)
+            tradeDict = fromStdJson(tradeRules)
         } catch(ex) {
             throw "JSON格式错误: " + ex
         }
@@ -242,16 +244,16 @@ tradeRules = "{\"commission_rate\":0.0015}"
         
         // 4. 创建配置记录
         //configTable = loadTable("dfs://config", "backtest_config")
-        configTable = loadTable("dfs://config", "backtest_config_test")
+        configTable = loadTable("dfs://config", "backtest_config")
         newConfig = table(
             [backtestId] as backtest_id,
             [backtestName] as backtest_name,
-            [backtestSettings] as backtest_settings,
+            [toStdJson(settingsDict)] as backtest_settings,
             [tableName] as selected_stocks_table,
-            [strategyRules] as strategy_rules,
-            [positionRules] as position_rules,
-            [rebalanceRules] as rebalance_rules,
-            [tradeRules] as trade_rules,
+            [toStdJson(strategyDict)] as strategy_rules,
+            [toStdJson(positionDict)] as position_rules,
+            [toStdJson(rebalanceDict)] as rebalance_rules,
+            [toStdJson(tradeDict)] as trade_rules,
             [now()] as create_time
         )
         

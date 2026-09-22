@@ -26,9 +26,10 @@ def clean_memory(sessionid) {
         return "错误：sessionid 不能为空"
     }
 
+    stockmcpValidateName("s_" + sessionid)
     // 清除共享内存表（限当前 session）
-    session_id = "%" + sessionid + "%"
-    tableNames = exec name from objs(true) where shared = true and name like session_id
+    session_id = "%_" + sessionid
+    tableNames = exec name from objs(true) where shared = true and endsWith(name, "_" + sessionid)
 
     // 清除匹配的表
     clearedCount = 0

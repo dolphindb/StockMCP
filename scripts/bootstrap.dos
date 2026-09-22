@@ -1,0 +1,21 @@
+// Persistent metadata and configuration. Existing rows are retained on reinstall.
+if (!existsDatabase("dfs://factor_meta")) database("dfs://factor_meta", HASH, [SYMBOL, 1], engine="OLAP")
+if (!existsTable("dfs://factor_meta", "factor_meta")) {
+    t = table(1:0, `factor_name`database_name`table_name`description`factor_code`source_table`retrieval_text,
+        [SYMBOL,STRING,STRING,STRING,STRING,STRING,STRING])
+    database("dfs://factor_meta").createPartitionedTable(t, "factor_meta", `factor_name)
+}
+if (!existsDatabase("dfs://config")) database("dfs://config", HASH, [STRING,1], engine="OLAP")
+if (!existsTable("dfs://config", "sel_stock_config")) {
+    t = table(1:0, `name`sel_rules`sel_dates, [STRING,STRING,STRING])
+    database("dfs://config").createPartitionedTable(t,"sel_stock_config",`name)
+}
+if (!existsTable("dfs://config", "backtest_config")) {
+    t = table(1:0, `backtest_id`backtest_name`backtest_settings`selected_stocks_table`strategy_rules`position_rules`rebalance_rules`trade_rules`create_time,
+        [STRING,STRING,STRING,STRING,STRING,STRING,STRING,STRING,TIMESTAMP])
+    database("dfs://config").createPartitionedTable(t,"backtest_config",`backtest_id)
+}
+if (!existsTable("dfs://config", "stockmcp_settings")) {
+    t = table(1:0, `name`value, [STRING,STRING])
+    database("dfs://config").createPartitionedTable(t,"stockmcp_settings",`name)
+}

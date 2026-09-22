@@ -19,10 +19,10 @@ def select_stocks_by_conditions(strDates, strRules, resultsName) {
     newConfig = table([resultsName] as name, [strRules] as sel_rules, [strDates] as sel_dates)
     loadTable("dfs://config", "sel_stock_config").append!(newConfig)
     result = dict(STRING, ANY)
-    rules = parseExpr(strRules).eval()
-    dates = parseExpr(strDates).eval()
-    startDate = temporalParse(strReplace(dates['startDate'], "-", "."), "yyyy.MM.dd")
-    endDate = temporalParse(strReplace(dates['endDate'], "-", "."), "yyyy.MM.dd")
+    rules = fromStdJson(strRules)
+    dates = fromStdJson(strDates)
+    startDate = temporalParse(strReplace(string(dates['startDate']), "-", "."), "yyyy.MM.dd")
+    endDate = temporalParse(strReplace(string(dates['endDate']), "-", "."), "yyyy.MM.dd")
 
     // 1. 加载数据并筛选指数成分股
     //lastDate = iif(temporalParse(max(dates), "yyyy.MM.dd")<tmpDate, temporalParse(max(dates), "yyyy.MM.dd"), tmpDate) //暂时先用用户提供的最后一个交易日或2025.11.11的成分股作为基准

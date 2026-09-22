@@ -2,7 +2,7 @@ description_export_table_to_csv = '
 工具：export_table_to_csv
 
 作用：
-  将共享内存表导出为CSV文件，并返回HTTP下载链接。回测时不需要再调用此工具，直接取run_backtest的输出文件链接即可。
+  将共享内存表导出为CSV文件，并返回本地路径或已配置的下载链接。回测时不需要再调用此工具，直接取run_backtest的输出文件链接即可。
 
 使用场景：
   - 需要下载分析结果到本地
@@ -13,7 +13,7 @@ description_export_table_to_csv = '
   - tableName: STRING，共享内存表名称
 
 返回值：
-  - 返回可直接点击下载的HTTP链接
+  - 返回服务端绝对路径；配置下载服务后返回链接
 
 示例调用：
 export_table_to_csv("agriculture_stocks_2_710237103043174906")
@@ -25,16 +25,17 @@ def export_table_to_csv(tableName) {
         return "错误：表名不能为空"
     }
 
+    stockmcpValidateName(tableName)
     // 获取表对象
     t = objByName(tableName)
 
     // 构造文件路径并导出
     fileName = tableName + ".csv"
-    exportPath = "/home/appadmin/zhangjiarong/server/csvdata/" + fileName
+    exportPath = stockmcpExportDir() + fileName
     saveText(t, exportPath)
 
     // 返回下载链接
-    return "http://183.134.101.137:8066/" + fileName
+    return stockmcpExportLink(fileName)
 }
 
 if (`export_table_to_csv in (exec name from listMCPTools())) {
