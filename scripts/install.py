@@ -7,6 +7,16 @@ from common import ROOT, TABLES, connect, literal
 
 
 def install(session):
+    # Check legacy financial keys before changing any objects. Old LAST keys have
+    # already collapsed distinct statements; a reimport into new tables is required.
+    for table in ['quarter_stock_income','quarter_stock_balancesheet','quarter_stock_cashflow']:
+        if session.run(f'existsTable("dfs://quarter_factor",{literal(table)})'):
+            keys=set(session.run(f'schema(loadTable("dfs://quarter_factor",{literal(table)})).sortColumns'))
+            if not {'ts_code','report_type','end_date','f_ann_date','ann_date'} <= keys:
+                raise RuntimeError(f'{table}: legacy financial key; use a fresh instance and reimport (see docs/local_deployment.md). Existing data has not been deleted.')
+    if session.run('existsTable("dfs://day_factor","index_daily")'):
+        if session.run('schema(loadTable("dfs://day_factor","index_daily")).keepDuplicates') != 'LAST':
+            raise RuntimeError('index_daily: legacy ALL duplicate policy; use a fresh instance and reimport (see docs/local_deployment.md).')
     schema = (ROOT / '建库建表/ddl.dos').read_text()
     module_dir = session.run('getHomeDir()') + '/modules/DolphinDBModules/EasyTushare'
     session.run(f'if (!exists({literal(module_dir)})) mkdir({literal(module_dir)})')

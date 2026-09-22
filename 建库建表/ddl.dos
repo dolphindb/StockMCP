@@ -174,7 +174,7 @@ def createIndexDaily(){
             tableName = tbName,
             partitionColumns = `trade_date,        // 按交易日期分区
             sortColumns = `ts_code`trade_date,
-            keepDuplicates = ALL
+            keepDuplicates = LAST
         )
         
         go
@@ -1638,7 +1638,7 @@ def createQuarterStockIncome(){
             table = schemaTB,
             tableName = tbName, 
             partitionColumns=`ann_date,
-            sortColumns=`ts_code`ann_date,
+            sortColumns=`ts_code`report_type`end_date`f_ann_date`ann_date,
             keepDuplicates=LAST
         )
         go 
@@ -2099,7 +2099,7 @@ def createQuarterStockBalancesheet(){
             table = schemaTB,
             tableName = tbName, 
             partitionColumns=`ann_date,
-            sortColumns=`ts_code`ann_date,
+            sortColumns=`ts_code`report_type`end_date`f_ann_date`ann_date,
             keepDuplicates=LAST
         )
         go 
@@ -2706,7 +2706,7 @@ def createQuarterStockCashflow(){
             table = schemaTB,
             tableName = tbName, 
             partitionColumns=`ann_date,
-            sortColumns=`ts_code`ann_date,
+            sortColumns=`ts_code`report_type`end_date`f_ann_date`ann_date,
             keepDuplicates=LAST
         )
         go 

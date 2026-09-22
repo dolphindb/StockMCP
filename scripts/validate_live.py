@@ -1,4 +1,4 @@
-"""Offline end-to-end smoke on the synthetic demo, including native HTTP MCP."""
+"""Real-data end-to-end acceptance; requires the documented six-stock September 2025 fixture."""
 import argparse
 import json
 import math
@@ -10,7 +10,7 @@ from common import connect, literal
 
 
 def main():
-    s=connect();tag='smoke_'+uuid.uuid4().hex[:12];results=[]
+    s=connect();tag='live_'+uuid.uuid4().hex[:12];results=[]
     def call(name,args):
         value=s.run(f'callMCPTool({literal(name)},fromStdJson({literal(json.dumps(args))}),true)')
         if isinstance(value,str):
@@ -23,34 +23,34 @@ def main():
         return value
     try:
         assert s.run('getDBname("stock_daily")')=='day_factor'
-        info=call('get_date_info',{});assert info['latest_trade_date']=='2025.03.07'
+        info=call('get_date_info',{});assert info['latest_trade_date']=='2025.09.12'
         meta=call('search_stock_factor_meta_by_keywords',{'keywords':'市盈率'})
         assert 'pe' in [x['factor_name'] for x in meta['factormetas']]
         extra_calls=[
-            ('get_stock_code_by_name',dict(StockName='演示',resultTableName='',sessionId='')),
-            ('get_stock_basic_info',dict(stockCodes=['600001.SH'],resultTableName='',sessionId='')),
-            ('get_stock_info',dict(stockCodes=['600001.SH'],dates=['2025.01.06'],resultTableName='',sessionId='')),
-            ('get_stock_daily_prev',dict(stockCodes=['600001.SH'],dates=['2025.01.06'],resultTableName='',sessionId='')),
-            ('get_stock_moneyflow',dict(stockCodes=['600001.SH'],startDate='2025.01.06',endDate='2025.03.07',is_aggregate=True,resultTableName='',sessionId='')),
-            ('get_industry_code_by_name',dict(KeywordList=['演示'],resultTableName='',sessionId='')),
+            ('get_stock_code_by_name',dict(StockName='贵州茅台',resultTableName='',sessionId='')),
+            ('get_stock_basic_info',dict(stockCodes=['600519.SH'],resultTableName='',sessionId='')),
+            ('get_stock_info',dict(stockCodes=['600519.SH'],dates=['2025.09.01'],resultTableName='',sessionId='')),
+            ('get_stock_daily_prev',dict(stockCodes=['600519.SH'],dates=['2025.09.01'],resultTableName='',sessionId='')),
+            ('get_stock_moneyflow',dict(stockCodes=['600519.SH'],startDate='2025.09.01',endDate='2025.09.12',is_aggregate=True,resultTableName='',sessionId='')),
+            ('get_industry_code_by_name',dict(KeywordList=['沪深300'],resultTableName='',sessionId='')),
             ('get_industry_info',dict(indexCodes=['000300.SH'])),
-            ('get_industry_moneyflow',dict(industryCodes=['881001.TI'],dates=['2025.01.06'],rowNum=10.,resultTableName='',sessionId='')),
+            ('get_industry_moneyflow',dict(industryCodes=[],dates=['2025.09.01'],rowNum=10.,resultTableName='',sessionId='')),
             ('search_industry_factor_meta_by_keywords',dict(keywords='流入')),
-            ('select_industries_by_factors',dict(selectCols=['ts_code','industry','trade_date','net_buy_amount'],whereCondition='trade_date >= 2025.01.06',orderbyCols=['net_buy_amount'],ascOrder=[0.],resultsName='')),
+            ('select_industries_by_factors',dict(selectCols=['ts_code','industry','trade_date','net_buy_amount'],whereCondition='trade_date >= 2025.09.01',orderbyCols=['net_buy_amount'],ascOrder=[0.],resultsName='')),
         ]
         for statement in ['income','balancesheet','cashflow']:
-            extra_calls.append(('get_financial_statements_'+statement,dict(stockCodes=['600001.SH'],dates=['2024.09.30'],resultTableName='',sessionId='')))
+            extra_calls.append(('get_financial_statements_'+statement,dict(stockCodes=['600519.SH'],dates=['2025.06.30'],resultTableName='',sessionId='')))
         for name,args in extra_calls:
             if name=='get_financial_statements_balancesheet':args['endDates']=args.pop('dates')
             call(name,args)
-        selected=call('select_stocks_by_conditions',{'strDates':json.dumps({'startDate':'2025-01-06','endDate':'2025-03-07'}),
+        selected=call('select_stocks_by_conditions',{'strDates':json.dumps({'startDate':'2025-09-01','endDate':'2025-09-12'}),
                       'strRules':json.dumps({'base_index':'hs300','industry':'','filter_expr':'pe > 0','factors':['pe']}),
                       'resultsName':tag})
-        assert selected['股票数量']==10
-        assessment=call('evaluate_stock_factor',{'factor':'pe','holdingPeriod':5.,'startDate':'2025.01.06','endDate':'2025.03.07','industries':[], 'sessionId':tag})
+        assert selected['股票数量']==6
+        assessment=call('evaluate_stock_factor',{'factor':'pe','holdingPeriod':5.,'startDate':'2025.09.01','endDate':'2025.09.12','industries':[], 'sessionId':tag})
         assert math.isfinite(assessment['mean_ic'])
-        config=call('create_backtest_config',{'backtestName':'Synthetic deployment smoke',
-                    'backtestSettings':json.dumps({'start_date':'2025-01-06','end_date':'2025-03-07','initial_capital':1000000,'benchmark':'000300.SH'}),
+        config=call('create_backtest_config',{'backtestName':'Real-data deployment acceptance',
+                    'backtestSettings':json.dumps({'start_date':'2025-09-01','end_date':'2025-09-12','initial_capital':1000000,'benchmark':'000300.SH'}),
                     'tableName':tag,'strategyRules':json.dumps({'factors':['pe'],'weights':[1]}),
                     'positionRules':json.dumps({'max_stocks':5,'weight_method':'equal'}),
                     'rebalanceRules':json.dumps({'weekday':'Tuesday','holding_period':5}),
@@ -83,8 +83,8 @@ def main():
         assert not response.get('isError',False),response
         results.append({'transport':'Streamable HTTP','tool_count':len(discovered['tools']),'ok':True})
         out=Path('artifacts');out.mkdir(exist_ok=True)
-        (out/'smoke.json').write_text(json.dumps({'results':results,'backtest':report,'factor':assessment},ensure_ascii=False,indent=2,default=str))
-        print('PASS HTTP MCP initialize, tools/list, tools/call; full synthetic workflow complete.')
+        (out/'live_smoke.json').write_text(json.dumps({'results':results,'backtest':report,'factor':assessment},ensure_ascii=False,indent=2,default=str))
+        print('PASS HTTP MCP initialize, tools/list, tools/call; real-data workflow complete.')
     finally:
         # Clear only objects created by this test, not other users' shared tables.
         for name in [tag,'nav_data_'+tag,'perf_metrics_'+tag]:

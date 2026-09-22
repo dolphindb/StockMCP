@@ -47,3 +47,15 @@ def test_config_defaults_are_persisted_and_ids_are_unique():
         assert json.loads(row.strategy_rules)['factors']==['circ_mv']
         assert json.loads(row.backtest_settings)['benchmark']=='000300.SH'
     finally:s.close()
+
+
+def test_reimporting_benchmark_does_not_duplicate_dates():
+    from common import append_frame
+    s=connect()
+    try:
+        rows=s.run('select * from loadTable("dfs://day_factor","index_daily")')
+        assert not rows.empty
+        append_frame(s,'dfs://day_factor','index_daily',rows.iloc[:1])
+        after=s.run('exec count(*) from loadTable("dfs://day_factor","index_daily")')
+        assert after==len(rows)
+    finally:s.close()

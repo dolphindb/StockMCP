@@ -26,3 +26,22 @@ def test_ignored_offset_fails_instead_of_infinite_loop_or_partial_success():
 def test_empty_result_and_provider_failure_are_distinct():
     assert importer([pd.DataFrame()]).query('daily').empty
     with pytest.raises(RuntimeError,match='returned None'):importer([None]).query('daily')
+
+
+def test_stock_filter_keeps_industry_and_index_rows(monkeypatch):
+    import import_tushare
+    saved=[]
+    monkeypatch.setattr(import_tushare,'append_frame',lambda session,db,table,data:saved.append(data))
+    obj=Importer.__new__(Importer);obj.codes=['600519.SH'];obj.s=Mock()
+    frame=pd.DataFrame({'ts_code':['881001.TI'],'trade_date':['20250901']})
+    assert obj.save('moneyflow_ind_ths',frame)==1
+    assert obj.save('stock_index_basic',frame)==1
+    assert obj.save('stock_daily',frame)==0
+
+
+def test_explicit_codes_query_only_requested_stocks():
+    obj=Importer.__new__(Importer)
+    obj.codes=['600519.SH'];obj.start='20250901';obj.end='20250912'
+    obj.query=Mock(return_value=pd.DataFrame());obj.save=Mock(return_value=0)
+    obj.run('stock_daily')
+    obj.query.assert_called_once_with('daily',ts_code='600519.SH',start_date='20250901',end_date='20250912')

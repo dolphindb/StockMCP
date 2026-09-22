@@ -41,7 +41,7 @@ class Importer:
         for col in data.columns:
             if col.endswith('_date') or col in ['trade_date']:
                 data[col]=pd.to_datetime(data[col],format='%Y%m%d',errors='coerce')
-        if self.codes and 'ts_code' in data and not table.startswith('index'):
+        if self.codes and 'ts_code' in data and table not in {'index_basic','stock_index_basic','index_daily','index_weight','moneyflow_ind_ths'}:
             data=data[data.ts_code.isin(self.codes)]
         append_frame(self.s,TABLE_PATHS[table],table,data)
         return len(data)
@@ -62,10 +62,16 @@ class Importer:
             for code in self.stock_codes():count+=self.save(source,self.query('namechange',ts_code=code))
         elif source in ['stock_daily','stock_adj_factor','stock_daily_basic','stock_limit','stock_st','stock_info','moneyflow','moneyflow_ind_ths']:
             endpoint={'stock_daily':'daily','stock_adj_factor':'adj_factor','stock_daily_basic':'daily_basic','stock_limit':'stk_limit','stock_info':'bak_basic'}.get(source,source)
-            for date in self.dates():count+=self.save(source,self.query(endpoint,trade_date=date))
+            if self.codes and source in ['stock_daily','stock_adj_factor','stock_daily_basic','stock_limit','moneyflow']:
+                for code in self.codes:
+                    count+=self.save(source,self.query(endpoint,ts_code=code,start_date=self.start,end_date=self.end))
+            else:
+                for date in self.dates():count+=self.save(source,self.query(endpoint,trade_date=date))
         elif source in ['index_basic','stock_index_basic']:
             for market in ['SSE','SZSE','CSI']:count+=self.save(source,self.query('index_basic',market=market))
         elif source=='index_daily':
+            if self.s.run('schema(loadTable("dfs://day_factor","index_daily")).keepDuplicates') != 'LAST':
+                raise RuntimeError('Legacy index_daily duplicate policy; reinstall on a fresh instance')
             for code in INDEXES:
                 # One calendar year per request plus pagination.
                 for year in range(int(self.start[:4]),int(self.end[:4])+1):
@@ -78,6 +84,9 @@ class Importer:
                     frame=self.query('index_weight',index_code=code,start_date=month.start_time.strftime('%Y%m%d'),end_date=month.end_time.strftime('%Y%m%d'))
                     frame['index_type']=kind;count+=self.save(source,frame)
         elif source in ['quarter_stock_income','quarter_stock_balancesheet','quarter_stock_cashflow']:
+            keys=set(self.s.run(f'schema(loadTable("dfs://quarter_factor",{literal(source)})).sortColumns'))
+            if not {'ts_code','report_type','end_date','f_ann_date','ann_date'} <= keys:
+                raise RuntimeError('Legacy financial table key; reinstall on a fresh instance before importing')
             endpoint=source.removeprefix('quarter_stock_')
             # All available reporting history is needed for as-of and YoY; provider
             # schema, revisions and disclosure dates are retained in raw tables.
