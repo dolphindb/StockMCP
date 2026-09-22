@@ -54,7 +54,6 @@ def main(session, startDate, endDate, token, dataSource, maxRetries):
     createStockAdjFactor()
     """
     #s.run(scripts)
-    print("token:", token)
     dbname = s.run("getDBname('{}')".format(dataSource))  
     # 初始化python写入接口
     appender = ddb.TableAppender(dbPath='dfs://'+dbname, tableName=dataSource, ddbSession=s)

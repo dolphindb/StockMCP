@@ -1,7 +1,7 @@
 '''
-Author: tanhua hua.tan@dolphindb.com
+Author: DolphinDB
 Date: 2025-10-21 16:22:33
-LastEditors: tanhua hua.tan@dolphindb.com
+LastEditors: DolphinDB
 LastEditTime: 2025-10-22 12:00:29
 FilePath: \PythonModules\TushareToDDB\dataSource\stock_basic.py
 Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -41,7 +41,6 @@ def main(session, startDate, endDate, token, dataSource, maxRetries):
     createStockBasic()
     """
     #s.run(scripts)
-    print("token:", token)
     dbname = s.run("getDBname('{}')".format(dataSource))  
     logging_stock_basic.info("The %s data import is .", dbname)
     # 初始化python写入接口

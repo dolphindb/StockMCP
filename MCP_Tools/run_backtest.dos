@@ -253,7 +253,7 @@ def loadPriceData(fullPriceTable, tradingDate, stocks){
 
 /**
  * 计算目标仓位
- * 开发者： jiarong zhang 
+ * 开发者： DolphinDB 
  * 日期：2025.11.11
  * 
  * @param targetStocks: TABLE - 股票分数字典
@@ -372,7 +372,7 @@ def calcPositions(targetStocks, cash, positions, priceData, positionRules) {
 /**
  * 执行交易
  * 
- * 开发者： jiarong zhang 
+ * 开发者： DolphinDB 
  * 日期：2025.11.11
  * 
  * @param targetSharesTable: TABLE - 目标持仓表 (列: ts_code, target_qty)
